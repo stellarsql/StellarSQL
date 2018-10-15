@@ -1,0 +1,4 @@
+[[package]]
+name = "stellar_sql"
+version = "0.1.0"
+
