@@ -1,0 +1,14 @@
+name: StellarSQL
+version: "0.0.1"
+author: "tigercosmos <phy.tiger@gmail.com>"
+about: A minimal DBMS implemented in Rust
+args:
+    - port:
+        help: port of the server.
+        required: false
+        takes_value: true
+    - daemon:
+        short: x
+        long: daemon-mode
+        help: run in daemon mode
+        required: false
