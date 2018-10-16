@@ -4,6 +4,10 @@
 
 (WIP) A minimal SQL DBMS written in Rust
 
+There is a series of articles introducing about this project: [Let's build a DBMS](https://tigercosmos.xyz/lets-build-dbms/)
+
+![logo](https://raw.githubusercontent.com/tigercosmos/StellarSQL/master/logo/logo.png)
+
 ## Setup
 
 Before you start, you need to have Rust and Cargo.
