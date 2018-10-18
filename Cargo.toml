@@ -6,3 +6,7 @@ authors = ["tigercosmos <phy.tiger@gmail.com>"]
 [dependencies]
 clap = {version = "~2.32.0", features = ["yaml"]}
 dotenv_codegen = "0.11.0"
+tokio = "0.1"
+tokio-io = "0.1"
+futures = "0.1"
+bytes = "0.4"
