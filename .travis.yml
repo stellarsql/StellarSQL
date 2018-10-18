@@ -5,7 +5,7 @@ before_script:
 
 script:
   - cargo fmt --all -- --check
-  - cargo run
+  - cargo build
 
 notifications:
   email:
