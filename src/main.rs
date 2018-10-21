@@ -1,14 +1,20 @@
 #[macro_use]
 extern crate clap;
-#[macro_use]
 extern crate futures;
 #[macro_use]
 extern crate dotenv_codegen;
+extern crate bytes;
 extern crate tokio;
 
+mod connection;
+
 use clap::App;
-#[macro_use]
-use tokio::io;
+use std::io::BufReader;
+use tokio::io::write_all;
+
+use connection::message;
+use connection::request::Request;
+use connection::response::Response;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 
@@ -36,13 +42,54 @@ fn main() {
     let server = listener
         .incoming()
         .for_each(move |socket| {
+            let addr = socket.peer_addr().unwrap();
+            println!("New Connection: {}", addr);
+
             // Spawn a task to process the connection
-            // TODO process()
+            process(socket);
+
             Ok(())
         }).map_err(|err| {
             println!("accept error = {:?}", err);
         });
 
-    tokio::run(server);
     println!("StellarSQL running on {} port", port);
+    tokio::run(server);
+}
+
+fn process(socket: TcpStream) {
+    let (reader, writer) = socket.split();
+
+    let messages = message::new(BufReader::new(reader));
+
+    // note the `move` keyword on the closure here which moves ownership
+    // of the reference into the closure, which we'll need for spawning the
+    // client below.
+    //
+    // The `map` function here means that we'll run some code for all
+    // requests (lines) we receive from the client. The actual handling here
+    // is pretty simple, first we parse the request and if it's valid we
+    // generate a response.
+    let responses =
+        messages.map(move |message| match Request::parse(&message) {
+            Ok(req) => req,
+            Err(e) => return Response::Error { msg: e },
+        });
+
+    // At this point `responses` is a stream of `Response` types which we
+    // now want to write back out to the client. To do that we use
+    // `Stream::fold` to perform a loop here, serializing each response and
+    // then writing it out to the client.
+    let writes = responses.fold(writer, |writer, response| {
+        let response = response.serialize().into_bytes();
+        write_all(writer, response).map(|(w, _)| w)
+    });
+
+    // `spawn` this client to ensure it
+    // runs concurrently with all other clients, for now ignoring any errors
+    // that we see.
+    let connection = writes.then(move |_| Ok(()));
+
+    // Spawn the task. Internally, this submits the task to a thread pool.
+    tokio::spawn(connection);
 }
