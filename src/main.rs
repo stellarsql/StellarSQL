@@ -7,6 +7,7 @@ extern crate bytes;
 extern crate tokio;
 
 mod connection;
+mod sql;
 
 use clap::App;
 use std::io::BufReader;
