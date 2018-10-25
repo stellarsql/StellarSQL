@@ -1,1 +1,1 @@
-mod symbol;
+pub mod symbol;
