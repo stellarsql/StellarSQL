@@ -5,6 +5,8 @@ extern crate futures;
 extern crate dotenv_codegen;
 extern crate bytes;
 extern crate tokio;
+#[macro_use]
+extern crate lazy_static;
 
 mod connection;
 mod sql;
