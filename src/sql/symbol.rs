@@ -15,6 +15,9 @@ pub enum Group {
     MultiKeyword,
     Function,
     Keyword,
+    Operator, // >, >=, ==, !=, <, <=
+    Number,
+    Identifier, // t1, a, b
 }
 
 /// Token includes keywords, functions, and data types (by alphabetical order)
@@ -111,6 +114,14 @@ pub enum Token {
     Float,
     Int,
     Varchar,
+
+    /* Operator */
+    LT, // <
+    LE, // <=
+    EQ, // ==
+    NE, // !=
+    GT, // >
+    GE, // >=
 }
 
 fn sym(name: &str, token: Token, group: Group) -> Symbol {
@@ -221,6 +232,14 @@ lazy_static! {
         m.insert("min", sym("min", Token::Min, Group::DataType));
         m.insert("sum", sym("sum", Token::Sum, Group::DataType));
 
+        /* Operator */
+        m.insert(">", sym(">", Token::GT, Group::Operator));
+        m.insert(">=", sym(">=", Token::GE, Group::Operator));
+        m.insert("==", sym("==", Token::EQ, Group::Operator));
+        m.insert("!=", sym("!=", Token::NE, Group::Operator));
+        m.insert("<", sym("<", Token::LT, Group::Operator));
+        m.insert("<=", sym("<=", Token::LE, Group::Operator));
+
         m //return m
     };
 }
@@ -233,4 +252,9 @@ fn test_symbols() {
     assert_eq!(s.len, 3);
     assert_eq!(s.token, Token::Add);
     assert_eq!(s.group, Group::Keyword);
+    let s = SYMBOLS.get(">").unwrap();
+    assert_eq!(s.name, ">");
+    assert_eq!(s.len, 1);
+    assert_eq!(s.token, Token::GT);
+    assert_eq!(s.group, Group::Operator);
 }
