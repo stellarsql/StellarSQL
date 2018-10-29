@@ -18,6 +18,7 @@ pub enum Group {
     Operator, // >, >=, ==, !=, <, <=
     Number,
     Identifier, // t1, a, b
+    Delimiter,  // `,`, (, )
 }
 
 /// Token includes keywords, functions, and data types (by alphabetical order)
@@ -118,10 +119,16 @@ pub enum Token {
     /* Operator */
     LT, // <
     LE, // <=
-    EQ, // ==
+    EQ, // =
     NE, // !=
     GT, // >
     GE, // >=
+
+    /* Delimiter */
+    ParentLeft,  // (
+    ParentRight, // )
+    Comma,       // ,
+    Semicolon,   // ;
 }
 
 fn sym(name: &str, token: Token, group: Group) -> Symbol {
@@ -235,13 +242,25 @@ lazy_static! {
         /* Operator */
         m.insert(">", sym(">", Token::GT, Group::Operator));
         m.insert(">=", sym(">=", Token::GE, Group::Operator));
-        m.insert("==", sym("==", Token::EQ, Group::Operator));
+        m.insert("=", sym("=", Token::EQ, Group::Operator));
         m.insert("!=", sym("!=", Token::NE, Group::Operator));
         m.insert("<", sym("<", Token::LT, Group::Operator));
         m.insert("<=", sym("<=", Token::LE, Group::Operator));
 
         m //return m
     };
+}
+
+impl<'a> Symbol<'a> {
+    pub fn match_delimiter(ch: char) -> Option<Symbol<'a>> {
+        match ch {
+            '(' => Some(sym("(", Token::ParentLeft, Group::Delimiter)),
+            ')' => Some(sym(")", Token::ParentRight, Group::Delimiter)),
+            ',' => Some(sym(",", Token::Comma, Group::Delimiter)),
+            ';' => Some(sym(";", Token::Semicolon, Group::Delimiter)),
+            _ => None,
+        }
+    }
 }
 
 /// Test if `SYMBOLS` initialize.
@@ -257,4 +276,14 @@ fn test_symbols() {
     assert_eq!(s.len, 1);
     assert_eq!(s.token, Token::GT);
     assert_eq!(s.group, Group::Operator);
+}
+
+#[test]
+fn test_match_delimiter() {
+    let mut chs = "){".chars();
+    let x = chs.next().unwrap();
+    let s = Symbol::match_delimiter(x).unwrap();
+    assert_eq!(s.token, Token::ParentRight);
+    let x = chs.next().unwrap();
+    assert!(Symbol::match_delimiter(x).is_none());
 }
