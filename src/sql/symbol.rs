@@ -259,6 +259,35 @@ impl<'a> Symbol<'a> {
     }
 }
 
+/// Check if the word is the first word of any multi-word keywords, and then
+/// return how many words of all possible keywords.
+/// ex: `alter` could be `alter table` and `alter column`, so return `Some(vec![2])`
+///     `is` could be `is null` and `is not null`, so return `Some(vec![2, 3])`
+pub fn check_multi_keywords_front(s: &str) -> Option<Vec<u32>> {
+    match s {
+        "add" => Some(vec![2]),
+        "alter" => Some(vec![2]),
+        "create" => Some(vec![2, 3, 4]),
+        "drop" => Some(vec![2]),
+        "foreign" => Some(vec![2]),
+        "full" => Some(vec![2]),
+        "group" => Some(vec![2]),
+        "inner" => Some(vec![2]),
+        "insert" => Some(vec![2]),
+        "is" => Some(vec![2, 3]),
+        "left" => Some(vec![2]),
+        "not" => Some(vec![2]),
+        "order" => Some(vec![2]),
+        "outer" => Some(vec![2]),
+        "primary" => Some(vec![2]),
+        "right" => Some(vec![2]),
+        "select" => Some(vec![2]),
+        "truncate" => Some(vec![2]),
+        "union" => Some(vec![2]),
+        _ => return None,
+    }
+}
+
 /// Test if `SYMBOLS` initialize.
 #[test]
 fn test_symbols() {
@@ -282,4 +311,10 @@ fn test_match_delimiter() {
     assert_eq!(s.token, Token::ParentRight);
     let x = chs.next().unwrap();
     assert!(Symbol::match_delimiter(x).is_none());
+}
+
+#[test]
+fn test_check_multi_keywords_front() {
+    assert_eq!(check_multi_keywords_front("alter"), Some(vec![2]));
+    assert!(check_multi_keywords_front("not_match").is_none());
 }
