@@ -1,33 +1,29 @@
 use std::collections::HashMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Symbol<'a> {
-    name: &'a str,
-    len: usize,
-    token: Token,
-    group: Group,
+    pub name: &'a str,
+    pub len: usize,
+    pub token: Token,
+    pub group: Group,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Group {
     DataType,
-    DoubleKeyword,
-    MultiKeyword,
     Function,
     Keyword,
-    Operator, // >, >=, ==, !=, <, <=
-    Number,
+    Operator,   // >, >=, =, !=, <, <=
     Identifier, // t1, a, b
     Delimiter,  // `,`, (, )
 }
 
 /// Token includes keywords, functions, and data types (by alphabetical order)
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     /* SQL Keywords */
     Add,
     AddConstraint,
-    Alter,
     AlterColumn,
     AlterTable,
     All,
@@ -53,7 +49,6 @@ pub enum Token {
     Delete,
     Desc,
     Distinct,
-    Drop,
     DropColumn,
     DropConstraint,
     DropDatabase,
@@ -129,9 +124,12 @@ pub enum Token {
     ParentRight, // )
     Comma,       // ,
     Semicolon,   // ;
+
+    /* Any Identifier */
+    Identifier,
 }
 
-fn sym(name: &str, token: Token, group: Group) -> Symbol {
+pub fn sym(name: &str, token: Token, group: Group) -> Symbol {
     Symbol {
         name,
         len: name.len(),
@@ -149,10 +147,9 @@ lazy_static! {
 
         /* SQL Keywords */
         m.insert("add", sym("add", Token::Add, Group::Keyword));
-        m.insert("add constraint", sym("add constraint", Token::AddConstraint, Group::DoubleKeyword));
-        m.insert("alter", sym("alter", Token::Alter, Group::Keyword));
-        m.insert("alter column", sym("alter column", Token::AlterColumn, Group::DoubleKeyword));
-        m.insert("alter table", sym("alter table", Token::AlterTable, Group::DoubleKeyword));
+        m.insert("add constraint", sym("add constraint", Token::AddConstraint, Group::Keyword));
+        m.insert("alter column", sym("alter column", Token::AlterColumn, Group::Keyword));
+        m.insert("alter table", sym("alter table", Token::AlterTable, Group::Keyword));
         m.insert("all", sym("all", Token::All, Group::Keyword));
         m.insert("and", sym("and", Token::And, Group::Keyword));
         m.insert("any", sym("any", Token::Any, Group::Keyword));
@@ -164,61 +161,60 @@ lazy_static! {
         m.insert("column", sym("column", Token::Column, Group::Keyword));
         m.insert("constraint", sym("constraint", Token::Constraint, Group::Keyword));
         m.insert("create", sym("create", Token::Create, Group::Keyword));
-        m.insert("create database", sym("create database", Token::CreateDatabase, Group::DoubleKeyword));
-        m.insert("create index", sym("create index", Token::CreateIndex, Group::DoubleKeyword));
-        m.insert("create or replace view", sym("create or replace view", Token::CreateOrReplaceView, Group::MultiKeyword));
-        m.insert("create table", sym("create table", Token::CreateTable, Group::DoubleKeyword));
-        m.insert("create procedure", sym("create procedure", Token::CreateProcedure, Group::DoubleKeyword));
-        m.insert("create unique index", sym("create unique index", Token::CreateUniqueIndex, Group::MultiKeyword));
-        m.insert("create view", sym("create view", Token::CreateView, Group::DoubleKeyword));
+        m.insert("create database", sym("create database", Token::CreateDatabase, Group::Keyword));
+        m.insert("create index", sym("create index", Token::CreateIndex, Group::Keyword));
+        m.insert("create or replace view", sym("create or replace view", Token::CreateOrReplaceView, Group::Keyword));
+        m.insert("create table", sym("create table", Token::CreateTable, Group::Keyword));
+        m.insert("create procedure", sym("create procedure", Token::CreateProcedure, Group::Keyword));
+        m.insert("create unique index", sym("create unique index", Token::CreateUniqueIndex, Group::Keyword));
+        m.insert("create view", sym("create view", Token::CreateView, Group::Keyword));
         m.insert("database", sym("database", Token::Database, Group::Keyword));
         m.insert("default", sym("default", Token::Default, Group::Keyword));
         m.insert("delete", sym("delete", Token::Delete, Group::Keyword));
         m.insert("desc", sym("desc", Token::Desc, Group::Keyword));
         m.insert("distinct", sym("distinct", Token::Distinct, Group::Keyword));
-        m.insert("drop", sym("drop", Token::Drop, Group::Keyword));
-        m.insert("drop column", sym("drop column", Token::DropColumn, Group::DoubleKeyword));
-        m.insert("drop constraint", sym("drop constraint", Token::DropConstraint, Group::DoubleKeyword));
-        m.insert("drop database", sym("drop database", Token::DropDatabase, Group::DoubleKeyword));
-        m.insert("drop default", sym("drop default", Token::DropDefault, Group::DoubleKeyword));
-        m.insert("drop index", sym("drop index", Token::DropIndex, Group::DoubleKeyword));
-        m.insert("drop table", sym("drop table", Token::DropTable, Group::DoubleKeyword));
-        m.insert("drop view", sym("drop view", Token::DropView, Group::DoubleKeyword));
+        m.insert("drop column", sym("drop column", Token::DropColumn, Group::Keyword));
+        m.insert("drop constraint", sym("drop constraint", Token::DropConstraint, Group::Keyword));
+        m.insert("drop database", sym("drop database", Token::DropDatabase, Group::Keyword));
+        m.insert("drop default", sym("drop default", Token::DropDefault, Group::Keyword));
+        m.insert("drop index", sym("drop index", Token::DropIndex, Group::Keyword));
+        m.insert("drop table", sym("drop table", Token::DropTable, Group::Keyword));
+        m.insert("drop view", sym("drop view", Token::DropView, Group::Keyword));
         m.insert("exec", sym("exec", Token::Exec, Group::Keyword));
         m.insert("exists", sym("exists", Token::Exists, Group::Keyword));
-        m.insert("foreign key", sym("foreign key", Token::ForeignKey, Group::DoubleKeyword));
+        m.insert("foreign key", sym("foreign key", Token::ForeignKey, Group::Keyword));
         m.insert("from", sym("from", Token::From, Group::Keyword));
-        m.insert("full outer join", sym("full outer join", Token::FullOuterJoin, Group::MultiKeyword));
-        m.insert("group by", sym("group by", Token::GroupBy, Group::DoubleKeyword));
+        m.insert("full outer join", sym("full outer join", Token::FullOuterJoin, Group::Keyword));
+        m.insert("group by", sym("group by", Token::GroupBy, Group::Keyword));
         m.insert("having", sym("having", Token::Having, Group::Keyword));
         m.insert("in", sym("in", Token::In, Group::Keyword));
         m.insert("index", sym("index", Token::Index, Group::Keyword));
-        m.insert("inner join", sym("inner join", Token::InnerJoin, Group::DoubleKeyword));
-        m.insert("insert into", sym("insert into", Token::InsertInto, Group::DoubleKeyword));
+        m.insert("inner join", sym("inner join", Token::InnerJoin, Group::Keyword));
+        m.insert("insert into", sym("insert into", Token::InsertInto, Group::Keyword));
         m.insert("is null", sym("is null", Token::IsNull, Group::Keyword));
-        m.insert("is not null", sym("is not null", Token::IsNotNull, Group::MultiKeyword));
+        m.insert("is not null", sym("is not null", Token::IsNotNull, Group::Keyword));
         m.insert("join", sym("join", Token::Join, Group::Keyword));
-        m.insert("left join", sym("left join", Token::LeftJoin, Group::DoubleKeyword));
+        m.insert("left join", sym("left join", Token::LeftJoin, Group::Keyword));
         m.insert("like", sym("like", Token::Like, Group::Keyword));
         m.insert("limit", sym("limit", Token::Limit, Group::Keyword));
         m.insert("not", sym("not", Token::Not, Group::Keyword));
-        m.insert("not null", sym("not null", Token::NotNull, Group::DoubleKeyword));
+        m.insert("not null", sym("not null", Token::NotNull, Group::Keyword));
         m.insert("or", sym("or", Token::Or, Group::Keyword));
-        m.insert("order by", sym("order by", Token::OrderBy, Group::DoubleKeyword));
-        m.insert("outer join", sym("outer join", Token::OuterJoin, Group::DoubleKeyword));
-        m.insert("primary key", sym("primary key", Token::PrimaryKey, Group::DoubleKeyword));
+        m.insert("order by", sym("order by", Token::OrderBy, Group::Keyword));
+        m.insert("outer join", sym("outer join", Token::OuterJoin, Group::Keyword));
+        m.insert("primary key", sym("primary key", Token::PrimaryKey, Group::Keyword));
         m.insert("procedure", sym("procedure", Token::Procedure, Group::Keyword));
-        m.insert("right join", sym("right join", Token::RightJoin, Group::DoubleKeyword));
+        m.insert("right join", sym("right join", Token::RightJoin, Group::Keyword));
         m.insert("rownum", sym("rownum", Token::Rownum, Group::Keyword));
         m.insert("select", sym("select", Token::Select, Group::Keyword));
-        m.insert("select distinct", sym("select distinct", Token::SelectDistinct, Group::DoubleKeyword));
-        m.insert("select top", sym("select top", Token::SelectTop, Group::DoubleKeyword));
+        m.insert("select distinct", sym("select distinct", Token::SelectDistinct, Group::Keyword));
+        m.insert("select top", sym("select top", Token::SelectTop, Group::Keyword));
         m.insert("set", sym("set", Token::Set, Group::Keyword));
         m.insert("table", sym("table", Token::Table, Group::Keyword));
         m.insert("top", sym("top", Token::Top, Group::Keyword));
-        m.insert("truncate table", sym("truncate table", Token::TruncateTable, Group::DoubleKeyword));
+        m.insert("truncate table", sym("truncate table", Token::TruncateTable, Group::Keyword));
         m.insert("union", sym("union", Token::Union, Group::Keyword));
-        m.insert("union all", sym("union all", Token::UnionAll, Group::DoubleKeyword));
+        m.insert("union all", sym("union all", Token::UnionAll, Group::Keyword));
         m.insert("unique", sym("unique", Token::Unique, Group::Keyword));
         m.insert("update", sym("update", Token::Update, Group::Keyword));
         m.insert("values", sym("values", Token::Values, Group::Keyword));
@@ -233,11 +229,11 @@ lazy_static! {
         m.insert("sum", sym("sum", Token::Sum, Group::Function));
 
         /* SQL Data Type */
-        m.insert("avg", sym("avg", Token::Avg, Group::DataType));
-        m.insert("count", sym("count", Token::Count, Group::DataType));
-        m.insert("max", sym("max", Token::Max, Group::DataType));
-        m.insert("min", sym("min", Token::Min, Group::DataType));
-        m.insert("sum", sym("sum", Token::Sum, Group::DataType));
+        m.insert("char", sym("char", Token::Char, Group::DataType));
+        m.insert("double", sym("double", Token::Double, Group::DataType));
+        m.insert("float", sym("float", Token::Float, Group::DataType));
+        m.insert("int", sym("int", Token::Int, Group::DataType));
+        m.insert("varchar", sym("varchar", Token::Varchar, Group::DataType));
 
         /* Operator */
         m.insert(">", sym(">", Token::GT, Group::Operator));
