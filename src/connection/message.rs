@@ -39,9 +39,7 @@ where
     fn poll(&mut self) -> Poll<Option<String>, io::Error> {
         let n = match self.io.read_line(&mut self.message) {
             Ok(t) => t,
-            Err(ref e) if e.kind() == ::std::io::ErrorKind::WouldBlock => {
-                return Ok(::futures::Async::NotReady)
-            }
+            Err(ref e) if e.kind() == ::std::io::ErrorKind::WouldBlock => return Ok(::futures::Async::NotReady),
             Err(e) => return Err(e.into()),
         };
         if n == 0 && self.message.len() == 0 {

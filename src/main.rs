@@ -73,11 +73,10 @@ fn process(socket: TcpStream) {
     // requests (lines) we receive from the client. The actual handling here
     // is pretty simple, first we parse the request and if it's valid we
     // generate a response.
-    let responses =
-        messages.map(move |message| match Request::parse(&message) {
-            Ok(req) => req,
-            Err(e) => return Response::Error { msg: e },
-        });
+    let responses = messages.map(move |message| match Request::parse(&message) {
+        Ok(req) => req,
+        Err(e) => return Response::Error { msg: e },
+    });
 
     // At this point `responses` is a stream of `Response` types which we
     // now want to write back out to the client. To do that we use
