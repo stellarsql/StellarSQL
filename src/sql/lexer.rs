@@ -1,9 +1,9 @@
 use sql::symbol;
 
 #[derive(Debug, Clone)]
-pub struct Scanner<'a> {
+pub struct Scanner {
     message: String,
-    tokens: Vec<symbol::Symbol<'a>>,
+    tokens: Vec<symbol::Symbol>,
     pos: Pos,
 }
 
@@ -13,7 +13,7 @@ struct Pos {
     cursor_r: usize,
 }
 
-impl<'a> Scanner<'a> {
+impl Scanner {
     pub fn new(message: &str) -> Scanner {
         Scanner {
             message: message.to_lowercase().trim().to_string(),
@@ -24,7 +24,7 @@ impl<'a> Scanner<'a> {
             },
         }
     }
-    pub fn scan_tokens(&'a mut self) -> Vec<symbol::Symbol<'a>> {
+    pub fn scan_tokens(&mut self) -> Vec<symbol::Symbol> {
         println!("Starting scanning message:\n`{}`", self.message);
         let mut chars = self.message.chars();
 

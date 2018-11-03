@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
-pub struct Symbol<'a> {
-    pub name: &'a str,
+pub struct Symbol {
+    pub name: String,
     pub len: usize,
     pub token: Token,
     pub group: Group,
@@ -131,7 +131,7 @@ pub enum Token {
 
 pub fn sym(name: &str, token: Token, group: Group) -> Symbol {
     Symbol {
-        name,
+        name: name.to_string(),
         len: name.len(),
         token,
         group,
@@ -140,7 +140,7 @@ pub fn sym(name: &str, token: Token, group: Group) -> Symbol {
 
 lazy_static! {
     /// A static struct of token hashmap storing all tokens
-    pub static ref SYMBOLS: HashMap<&'static str, Symbol<'static>> = {
+    pub static ref SYMBOLS: HashMap<&'static str, Symbol> = {
         let mut m = HashMap::new();
 
         // The following is maintained by hand according to `Token`
@@ -247,8 +247,8 @@ lazy_static! {
     };
 }
 
-impl<'a> Symbol<'a> {
-    pub fn match_delimiter(ch: char) -> Option<Symbol<'a>> {
+impl Symbol {
+    pub fn match_delimiter(ch: char) -> Option<Symbol> {
         match ch {
             '(' => Some(sym("(", Token::ParentLeft, Group::Delimiter)),
             ')' => Some(sym(")", Token::ParentRight, Group::Delimiter)),
