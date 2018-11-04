@@ -1,4 +1,6 @@
 use sql::symbol;
+use std::error;
+use std::fmt;
 
 #[derive(Debug, Clone)]
 pub struct Scanner {
@@ -13,6 +15,19 @@ struct Pos {
     cursor_r: usize,
 }
 
+#[derive(Debug)]
+pub enum LexerError {
+    NotAllowedChar,
+}
+
+impl fmt::Display for LexerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            LexerError::NotAllowedChar => write!(f, "please use ascii character."),
+        }
+    }
+}
+
 impl Scanner {
     pub fn new(message: &str) -> Scanner {
         Scanner {
@@ -24,7 +39,7 @@ impl Scanner {
             },
         }
     }
-    pub fn scan_tokens(&mut self) -> Vec<symbol::Symbol> {
+    pub fn scan_tokens(&mut self) -> Result<Vec<symbol::Symbol>, LexerError> {
         println!("Starting scanning message:\n`{}`", self.message);
         let mut chars = self.message.chars();
 
@@ -169,7 +184,7 @@ impl Scanner {
                                 self.pos.cursor_l = self.pos.cursor_r;
                             }
                             _ => {
-                                // error
+                                return Err(LexerError::NotAllowedChar);
                             }
                         }
                     }
@@ -178,7 +193,7 @@ impl Scanner {
                 None => break,
             };
         }
-        self.tokens.clone()
+        Ok(self.tokens.clone())
     }
 }
 
@@ -194,7 +209,7 @@ fn is_delimiter(ch: char) -> bool {
 pub fn test_scan_tokens() {
     let message = "select customername, contactname, address from customers where address is null;";
     let mut s = Scanner::new(message);
-    let tokens = s.scan_tokens();
+    let tokens = s.scan_tokens().unwrap();
     let mut iter = (&tokens).iter();
     let x = iter.next().unwrap();
     assert_eq!(
@@ -260,7 +275,7 @@ pub fn test_scan_tokens() {
 
     let message = "select * from customers;";
     let mut s = Scanner::new(message);
-    let tokens = s.scan_tokens();
+    let tokens = s.scan_tokens().unwrap();
     let mut iter = (&tokens).iter();
     let x = iter.next().unwrap();
     assert_eq!(
@@ -291,7 +306,7 @@ pub fn test_scan_tokens() {
 
     let message = "insert \n\r\tinto \t\tcustomers \n(customername,\n\n city)\n\n values ('cardinal', 'norway');";
     let mut s = Scanner::new(message);
-    let tokens = s.scan_tokens();
+    let tokens = s.scan_tokens().unwrap();
     let mut iter = (&tokens).iter();
     let x = iter.next().unwrap();
     assert_eq!(
