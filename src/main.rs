@@ -9,6 +9,7 @@ extern crate tokio;
 extern crate lazy_static;
 
 mod connection;
+mod component;
 mod sql;
 
 use clap::App;
