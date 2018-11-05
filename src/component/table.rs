@@ -1,13 +1,13 @@
-use std::collections::HashMap;
 use component::field::Field;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct Table {
     name: String,
-    fields: HashMap<String,Field>,
+    fields: HashMap<String, Field>,
     primary_key: Vec<String>,
     foreign_key: Vec<String>,
-    reference_table: Option<String>,    
+    reference_table: Option<String>,
 }
 
 impl Table {

@@ -8,7 +8,7 @@ pub enum DataType {
 }
 
 #[derive(Debug, Clone)]
-pub enum Value{
+pub enum Value {
     Char(u8, String),
     Double(f64),
     Float(f32),

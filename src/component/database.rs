@@ -3,7 +3,7 @@ use component::table::Table;
 #[derive(Debug, Clone)]
 pub struct Database {
     name: String,
-    tables: Vec<Table>
+    tables: Vec<Table>,
 }
 
 impl Database {

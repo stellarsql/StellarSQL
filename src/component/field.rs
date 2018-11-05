@@ -13,7 +13,7 @@ pub struct Field {
 #[derive(Debug, Clone)]
 pub enum Checker {
     None,
-    Some(Operator, Value)
+    Some(Operator, Value),
 }
 
 #[derive(Debug, Clone)]
