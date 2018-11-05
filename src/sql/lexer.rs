@@ -1,5 +1,4 @@
 use sql::symbol;
-use std::error;
 use std::fmt;
 
 #[derive(Debug, Clone)]
@@ -379,4 +378,14 @@ pub fn test_scan_tokens() {
         "\";\", Semicolon, Delimiter"
     );
     assert!(iter.next().is_none());
+}
+
+#[test]
+fn test_scan_tokens_error() {
+    let message = "create table $1234";
+    let mut s = Scanner::new(message);
+    match s.scan_tokens() {
+        Ok(_) => {}
+        Err(e) => assert_eq!(format!("{}", e), "please use ascii character."),
+    }
 }
