@@ -26,7 +26,7 @@ enum Operator {
 }
 
 impl Field {
-    pub fn new(name: &str, datatype: DataType, not_null: bool,default: Option<String>, check: Checker) -> Field {
+    pub fn new(name: &str, datatype: DataType, not_null: bool, default: Option<String>, check: Checker) -> Field {
         Field {
             name: name.to_string(),
             datatype,
