@@ -1,19 +1,18 @@
 use component::datatype::DataType;
-use component::datatype::Value;
 
 #[derive(Debug, Clone)]
 pub struct Field {
-    name: String,
-    datatype: DataType,
-    value: Value,
-    not_null: bool,
-    check: Checker,
+    pub name: String,
+    pub datatype: DataType,
+    pub not_null: bool,
+    pub default: Option<String>,
+    pub check: Checker,
 }
 
 #[derive(Debug, Clone)]
 pub enum Checker {
     None,
-    Some(Operator, Value),
+    Some(Operator, String),
 }
 
 #[derive(Debug, Clone)]
@@ -27,12 +26,12 @@ enum Operator {
 }
 
 impl Field {
-    fn new(name: &str, datatype: DataType, value: Value, not_null: bool, check: Checker) -> Field {
+    pub fn new(name: &str, datatype: DataType, not_null: bool,default: Option<String>, check: Checker) -> Field {
         Field {
             name: name.to_string(),
             datatype,
-            value,
             not_null,
+            default,
             check,
         }
     }
