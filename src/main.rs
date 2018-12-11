@@ -11,6 +11,7 @@ extern crate lazy_static;
 mod component;
 mod connection;
 mod sql;
+mod storage;
 
 use clap::App;
 use std::io::BufReader;
@@ -53,7 +54,8 @@ fn main() {
             process(socket);
 
             Ok(())
-        }).map_err(|err| {
+        })
+        .map_err(|err| {
             println!("accept error = {:?}", err);
         });
 
