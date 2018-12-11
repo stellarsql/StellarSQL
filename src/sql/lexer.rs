@@ -1,4 +1,4 @@
-use sql::symbol;
+use crate::sql::symbol;
 use std::fmt;
 
 #[derive(Debug, Clone)]

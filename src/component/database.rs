@@ -1,4 +1,4 @@
-use component::table::Table;
+use crate::component::table::Table;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]

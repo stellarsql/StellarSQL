@@ -1,6 +1,6 @@
-use component::datatype::DataType;
-use component::field;
-use component::field::Field;
+use crate::component::datatype::DataType;
+use crate::component::field;
+use crate::component::field::Field;
 use std::collections::HashMap;
 use std::fmt;
 

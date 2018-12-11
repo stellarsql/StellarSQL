@@ -1,10 +1,7 @@
 #[macro_use]
 extern crate clap;
-extern crate futures;
 #[macro_use]
 extern crate dotenv_codegen;
-extern crate bytes;
-extern crate tokio;
 #[macro_use]
 extern crate lazy_static;
 
@@ -17,9 +14,9 @@ use clap::App;
 use std::io::BufReader;
 use tokio::io::write_all;
 
-use connection::message;
-use connection::request::Request;
-use connection::response::Response;
+use crate::connection::message;
+use crate::connection::request::Request;
+use crate::connection::response::Response;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 

@@ -3,7 +3,7 @@ use std::mem;
 
 use futures::{Poll, Stream};
 
-use AsyncRead;
+use tokio_io::AsyncRead;
 
 /// Combinator created by the top-level `message` method which is a stream over
 /// the message of text on an I/O object.

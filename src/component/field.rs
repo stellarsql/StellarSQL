@@ -1,4 +1,4 @@
-use component::datatype::DataType;
+use crate::component::datatype::DataType;
 
 #[derive(Debug, Clone)]
 pub struct Field {
@@ -16,7 +16,7 @@ pub enum Checker {
 }
 
 #[derive(Debug, Clone)]
-enum Operator {
+pub enum Operator {
     LT, // <
     LE, // <=
     EQ, // =

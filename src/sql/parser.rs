@@ -1,7 +1,7 @@
-use sql::lexer::LexerError;
-use sql::lexer::Scanner;
-use sql::symbol::Symbol;
-use sql::symbol::Token;
+use crate::sql::lexer::LexerError;
+use crate::sql::lexer::Scanner;
+use crate::sql::symbol::Symbol;
+use crate::sql::symbol::Token;
 use std::fmt;
 
 struct Parser {
