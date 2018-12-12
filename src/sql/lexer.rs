@@ -204,188 +204,214 @@ fn is_delimiter(ch: char) -> bool {
     ch == '(' || ch == ')' || ch == ',' || ch == ';'
 }
 
-#[test]
-pub fn test_scan_tokens() {
-    let message = "select customername, contactname, address from customers where address is null;";
-    let mut s = Scanner::new(message);
-    let tokens = s.scan_tokens().unwrap();
-    let mut iter = (&tokens).iter();
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"select\", Select, Keyword"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"customername\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\",\", Comma, Delimiter"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"contactname\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\",\", Comma, Delimiter"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"address\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"from\", From, Keyword"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"customers\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"where\", Where, Keyword"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"address\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"is null\", IsNull, Keyword"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\";\", Semicolon, Delimiter"
-    );
-    assert!(iter.next().is_none());
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    pub fn test_scan_tokens() {
+        let message = "select customername, contactname, address from customers where address is null;";
+        let mut s = Scanner::new(message);
+        let tokens = s.scan_tokens().unwrap();
+        let mut iter = (&tokens).iter();
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"select\", Select, Keyword"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"customername\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\",\", Comma, Delimiter"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"contactname\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\",\", Comma, Delimiter"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"address\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"from\", From, Keyword"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"customers\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"where\", Where, Keyword"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"address\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"is null\", IsNull, Keyword"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\";\", Semicolon, Delimiter"
+        );
+        assert!(iter.next().is_none());
 
-    let message = "select * from customers;";
-    let mut s = Scanner::new(message);
-    let tokens = s.scan_tokens().unwrap();
-    let mut iter = (&tokens).iter();
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"select\", Select, Keyword"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"*\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"from\", From, Keyword"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"customers\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\";\", Semicolon, Delimiter"
-    );
-    assert!(iter.next().is_none());
+        let message = "select * from customers;";
+        let mut s = Scanner::new(message);
+        let tokens = s.scan_tokens().unwrap();
+        let mut iter = (&tokens).iter();
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"select\", Select, Keyword"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"*\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"from\", From, Keyword"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"customers\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\";\", Semicolon, Delimiter"
+        );
+        assert!(iter.next().is_none());
 
-    let message = "insert \n\r\tinto \t\tcustomers \n(customername,\n\n city)\n\n values ('cardinal', 'norway');";
-    let mut s = Scanner::new(message);
-    let tokens = s.scan_tokens().unwrap();
-    let mut iter = (&tokens).iter();
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"insert into\", InsertInto, Keyword"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"customers\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"(\", ParentLeft, Delimiter"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"customername\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\",\", Comma, Delimiter"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"city\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\")\", ParentRight, Delimiter"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"values\", Values, Keyword"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"(\", ParentLeft, Delimiter"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"\\\'cardinal\\\'\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\",\", Comma, Delimiter"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\"\\\'norway\\\'\", Identifier, Identifier"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\")\", ParentRight, Delimiter"
-    );
-    let x = iter.next().unwrap();
-    assert_eq!(
-        format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-        "\";\", Semicolon, Delimiter"
-    );
-    assert!(iter.next().is_none());
-}
+        let message = "insert \n\r\tinto \t\tcustomers \n(customername,\n\n city)\n\n values ('cardinal', 'norway');";
+        let mut s = Scanner::new(message);
+        let tokens = s.scan_tokens().unwrap();
+        let mut iter = (&tokens).iter();
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"insert into\", InsertInto, Keyword"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"customers\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"(\", ParentLeft, Delimiter"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"customername\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\",\", Comma, Delimiter"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"city\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\")\", ParentRight, Delimiter"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"values\", Values, Keyword"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"(\", ParentLeft, Delimiter"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"\\\'cardinal\\\'\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\",\", Comma, Delimiter"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"\\\'norway\\\'\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\")\", ParentRight, Delimiter"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\";\", Semicolon, Delimiter"
+        );
+        assert!(iter.next().is_none());
 
-#[test]
-fn test_scan_tokens_error() {
-    let message = "create table $1234";
-    let mut s = Scanner::new(message);
-    match s.scan_tokens() {
-        Ok(_) => {}
-        Err(e) => assert_eq!(format!("{}", e), "please use ascii character."),
+        let message = "create table x1;";
+        let mut s = Scanner::new(message);
+        let tokens = s.scan_tokens().unwrap();
+        println!("{:?}", tokens);
+        let mut iter = (&tokens).iter();
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"create table\", CreateTable, Keyword"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"x1\", Identifier, Identifier"
+        );
+        let x = iter.next().unwrap();
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\";\", Semicolon, Delimiter"
+        );
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_scan_tokens_error() {
+        let message = "create table $1234";
+        let mut s = Scanner::new(message);
+        match s.scan_tokens() {
+            Ok(_) => {}
+            Err(e) => assert_eq!(format!("{}", e), "please use ascii character."),
+        }
     }
 }
