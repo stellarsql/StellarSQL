@@ -35,4 +35,14 @@ impl Field {
             check: Checker::None,
         }
     }
+
+    pub fn new_all(name: &str, datatype: DataType, not_null: bool, default: Option<String>, check: Checker) -> Field {
+        Field {
+            name: name.to_string(),
+            datatype,
+            not_null,
+            default,
+            check,
+        }
+    }
 }

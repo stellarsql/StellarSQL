@@ -116,7 +116,7 @@ mod tests {
         let mut table = Table::new("table_1");
         table.fields.insert(
             "attr_1".to_string(),
-            Field::new(
+            Field::new_all(
                 "attr_1",
                 DataType::Int,
                 true,                    // not_null is true
@@ -126,7 +126,7 @@ mod tests {
         );
         table.fields.insert(
             "attr_2".to_string(),
-            Field::new(
+            Field::new_all(
                 "attr_2",
                 DataType::Int,
                 true, // not_null is true
@@ -136,7 +136,7 @@ mod tests {
         );
         table.fields.insert(
             "attr_3".to_string(),
-            Field::new(
+            Field::new_all(
                 "attr_3",
                 DataType::Int,
                 false, // not null is false
