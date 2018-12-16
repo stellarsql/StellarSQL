@@ -14,4 +14,20 @@ impl Database {
             tables: HashMap::new(),
         }
     }
+
+    pub fn new_table(&mut self, table: Table) {
+        self.tables.insert(table.name.to_string(), table);
+    }
+
+    // load the metadate of the database (without data) from storage
+    pub fn load(name: &str) -> Database {
+        // TODO: need load from the storage
+        Database {
+            name: name.to_string(),
+            tables: HashMap::new(),
+        }
+    }
+
+    // save the metadate and the data of the database to storage
+    pub fn save(name: &str) {}
 }
