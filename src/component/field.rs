@@ -26,13 +26,13 @@ pub enum Operator {
 }
 
 impl Field {
-    pub fn new(name: &str, datatype: DataType, not_null: bool, default: Option<String>, check: Checker) -> Field {
+    pub fn new(name: &str, datatype: DataType) -> Field {
         Field {
             name: name.to_string(),
             datatype,
-            not_null,
-            default,
-            check,
+            not_null: false,
+            default: None,
+            check: Checker::None,
         }
     }
 }
