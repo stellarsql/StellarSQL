@@ -162,7 +162,6 @@ impl Scanner {
                                                 ));
                                             }
                                         }
-                                        // is_last_multi = false;
                                     }
                                 }
                                 if is_delimiter(x) {
