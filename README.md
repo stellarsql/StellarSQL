@@ -10,7 +10,7 @@ There is a series of articles introducing about this project: [Let's build a DBM
 
 ## Setup
 
-Before you start, you need to have Rust and Cargo.
+Before you start, you need to have Rust(>=1.31) and Cargo.
 
 ```bash
 curl https://sh.rustup.rs -sSf | sh
@@ -29,8 +29,28 @@ cd StellarSQL
 cargo build
 ```
 
+## Test
+
+```bash
+cargo test
+```
+
 ## Run
 
 ```bash
 cargo run
 ```
+
+## Pull Request
+
+Install [rustfmt](https://github.com/rust-lang/rustfmt), and make sure you could pass:
+
+```sh
+cargo fmt --all -- --check
+cargo build
+cargo test
+```
+
+## License
+
+MIT
