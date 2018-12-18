@@ -69,6 +69,10 @@ impl Table {
         }
     }
 
+    pub fn insert_new_field(&mut self, field: Field) {
+        self.fields.insert(field.name.clone(), field);
+    }
+
     /// `insert` row into the table
     /// `key` and `value` are `&str`, and will be formated to the right type.
     pub fn insert_row(&mut self, row: Vec<(&str, &str)>) -> Result<(), TableError> {

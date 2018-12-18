@@ -15,7 +15,7 @@ impl Database {
         }
     }
 
-    pub fn new_table(&mut self, table: Table) {
+    pub fn insert_new_table(&mut self, table: Table) {
         self.tables.insert(table.name.to_string(), table);
     }
 

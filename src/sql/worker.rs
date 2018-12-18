@@ -24,9 +24,9 @@ impl SQL {
     }
 
     // Load the database and create a new table
-    pub fn create_table(db_name: &str, table_name: &str) -> Result<SQL, SQLError> {
-        let db = Database::load(db_name);
-        // TODO: create table in database
+    pub fn create_table(db_name: &str, table: &Table) -> Result<SQL, SQLError> {
+        let mut db = Database::load(db_name);
+        db.insert_new_table(table.clone());
         Ok(SQL { database: db })
     }
 }
