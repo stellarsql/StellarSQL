@@ -319,105 +319,19 @@ impl File {
         Ok(dbs)
     }
 
-    // pub fn create_table(db_name: &str, new_table: &Table) -> Result<(), FileError> {
-    //     // check if db exists
-    //     let db_path = format!("{}/{}", FILE_BASE_PATH, db_name);
-    //     if !Path::new(&db_path).exists() {
-    //         return Err(FileError::DbNotExists);
-    //     }
+    // TODO: remove_db(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<(), FileError>
 
-    //     // parse tables.json
-    //     let tables_json_path = format!("{}/{}", db_path, "tables.json");
-    //     let tables_json_str = fs::read_to_string(&tables_json_path)?;
-    //     let mut tables = serde_json::from_str(&tables_json_str)?;
+    // TODO: create_table(username: &str, db_name: &str, table: &TableInfo, file_base_path: Option<&str>) -> Result<(), FileError>
 
-    //     // check if the table exists
-    //     for t in tables["tables"].members() {
-    //         if t["name"] == new_table["name"] {
-    //             return Err(FileError::TableExists);
-    //         }
-    //     }
+    // TODO: load_tables(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<Vec<TableInfo>, FileError>
 
-    //     // convert table to json object
-    //     let mut new_table_json = object!{
-    //         "name" => new_table.name,
-    //         "path_tsv" => format!("{}.tsv", new_table.name),
-    //         "path_bin" => format!("{}.bin", new_table.name),
-    //         "primary_key" => array!(new_table.primary_key),
-    //         "foreign_key" => array!(new_table.foreign_key),
-    //         "reference_table" => array!(new_table.reference_table),
-    //         "reference_attr" => array!(new_table.reference_attr),
-    //         "attrs": array![],
-    //     };
+    // TODO: append_rows(username: &str, db_name: &str, table_name: &str, rows: &Vec<Row>, file_base_path: Option<&str>) -> Result<Vec<u32>, FileError>
 
-    //     // deal with attrs
-    //     let mut attr_names = vec![];
-    //     for (attr_name, attr) in &new_table {
-    //         attr_names.push(attr_name);
-    //         new_table_json["attrs"].push(object!{
-    //             "name" => attr_name,
-    //             "datatype" => datatype_to_obj(&attr.datatype),
-    //             "not_null" => attr.not_null,
-    //             "default" => attr.default.unwrap_or("__")
-    //             // TODO: Checker for field
-    //         });
-    //     }
+    // TODO: fetch_rows(username: &str, db_name: &str, table_name: &str, row_id_range: &Vec<u32>, file_base_path: Option<&str>) -> Result<Vec<Row>, FileError>
 
-    //     // insert table json to `tables.json`
-    //     tables["tables"].push(new_table_json)?;
+    // TODO: delete_rows(username: &str, db_name: &str, table_name: &str, row_id_range: &Vec<u32>, file_base_path: Option<&str>) -> Result<(), FileError>
 
-    //     // save `tables.json`
-    //     let mut tables_file = fs::OpenOptions::new()
-    //         .read(true)
-    //         .write(true)
-    //         .create(true)
-    //         .open(tables_json_path)?;
-    //     tables_file.write_all(tables.pretty(4).as_bytes())?;
-
-    //     // write tsv
-    //     let table_tsv_path = format!("{}/{}/{}.tsv", db_path, new_table.name, new_table.name);
-    //     let mut table_tsv = fs::OpenOptions::new()
-    //         .read(true)
-    //         .write(true)
-    //         .create(true)
-    //         .open(table_tsv_path)?;
-    //     tables_file.write_all(attr_names.join("\t").as_bytes())?;
-
-    //     Ok(())
-    // }
-
-    // load_table
-
-    // fetch rows
-
-    // pub fn datatype_to_obj(datatype: &DataType) -> json::JsonValue {
-    //     match datatype {
-    //         DataType::Char(length) => object!{
-    //             "type" => "char",
-    //             "length" => length
-    //         },
-    //         DataType::Double => object!{
-    //             "type" => "double",
-    //             "length" => 64
-    //         },
-    //         DataType::Float => object!{
-    //             "type" => "float",
-    //             "length" => 32
-    //         },
-    //         DataType::Int => object!{
-    //             "type" => "int",
-    //             "length" => 32
-    //         },
-    //         DataType::Varchar(length) => object!{
-    //             "type" => "varchar",
-    //             "length" => length
-    //         },
-    //     }
-    // }
-
-    // pub fn obj_to_datatype(obj: &json::JsonValue) -> DataType {
-    //     DataType::get(obj["type"], obj["length"])
-    // }
+    // TODO: modify_row(username: &str, db_name: &str, table_name: &str, row_id: u32, new_row: &Row, file_base_path: Option<&str>) -> Result<(), FileError>
 }
 
 #[cfg(test)]
@@ -429,7 +343,7 @@ mod tests {
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
-        File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+        File::create_username("crazyguy", Some(file_base_path)).unwrap();
         File::create_username("happyguy", Some(file_base_path)).unwrap();
 
         assert!(Path::new(file_base_path).exists());
@@ -443,8 +357,8 @@ mod tests {
         let ideal_usernames_json = UsernamesJson {
             usernames: vec![
                 UsernameInfo {
-                    name: "tom6311tom6311".to_string(),
-                    path: "tom6311tom6311".to_string()
+                    name: "crazyguy".to_string(),
+                    path: "crazyguy".to_string()
                 },
                 UsernameInfo {
                     name: "happyguy".to_string(),
@@ -458,13 +372,13 @@ mod tests {
         assert_eq!(usernames_json.usernames[0].path, ideal_usernames_json.usernames[0].path);
         assert_eq!(usernames_json.usernames[1].path, ideal_usernames_json.usernames[1].path);
 
-        assert!(Path::new(&format!("{}/{}", file_base_path, "tom6311tom6311")).exists());
+        assert!(Path::new(&format!("{}/{}", file_base_path, "crazyguy")).exists());
         assert!(Path::new(&format!("{}/{}", file_base_path, "happyguy")).exists());
 
-        assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json")).exists());
+        assert!(Path::new(&format!("{}/{}/{}", file_base_path, "crazyguy", "dbs.json")).exists());
         assert!(Path::new(&format!("{}/{}/{}", file_base_path, "happyguy", "dbs.json")).exists());
 
-        let dbs_json = fs::read_to_string(format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json")).unwrap();
+        let dbs_json = fs::read_to_string(format!("{}/{}/{}", file_base_path, "crazyguy", "dbs.json")).unwrap();
         let dbs_json: DbsJson = serde_json::from_str(&dbs_json).unwrap();
 
         assert_eq!(dbs_json.dbs.len(), 0);
@@ -481,11 +395,11 @@ mod tests {
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
-        File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+        File::create_username("crazyguy", Some(file_base_path)).unwrap();
         File::create_username("happyguy", Some(file_base_path)).unwrap();
 
         let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
-        assert_eq!(usernames, vec!["tom6311tom6311", "happyguy"]);
+        assert_eq!(usernames, vec!["crazyguy", "happyguy"]);
     }
 
     #[test]
@@ -494,17 +408,17 @@ mod tests {
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
-        File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+        File::create_username("crazyguy", Some(file_base_path)).unwrap();
         File::create_username("happyguy", Some(file_base_path)).unwrap();
         File::create_username("sadguy", Some(file_base_path)).unwrap();
 
         let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
-        assert_eq!(usernames, vec!["tom6311tom6311", "happyguy", "sadguy"]);
+        assert_eq!(usernames, vec!["crazyguy", "happyguy", "sadguy"]);
 
         File::remove_username("happyguy", Some(file_base_path)).unwrap();
 
         let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
-        assert_eq!(usernames, vec!["tom6311tom6311", "sadguy"]);
+        assert_eq!(usernames, vec!["crazyguy", "sadguy"]);
 
         match File::remove_username("happyguy", Some(file_base_path)) {
             Ok(_) => {}
@@ -514,9 +428,9 @@ mod tests {
         File::remove_username("sadguy", Some(file_base_path)).unwrap();
 
         let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
-        assert_eq!(usernames, vec!["tom6311tom6311"]);
+        assert_eq!(usernames, vec!["crazyguy"]);
 
-        File::remove_username("tom6311tom6311", Some(file_base_path)).unwrap();
+        File::remove_username("crazyguy", Some(file_base_path)).unwrap();
 
         let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
         assert_eq!(usernames.len(), 0);
@@ -528,12 +442,12 @@ mod tests {
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
-        File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
-        File::create_db("tom6311tom6311", "BookerDB", Some(file_base_path)).unwrap();
-        File::create_db("tom6311tom6311", "MovieDB", Some(file_base_path)).unwrap();
+        File::create_username("crazyguy", Some(file_base_path)).unwrap();
+        File::create_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
+        File::create_db("crazyguy", "MovieDB", Some(file_base_path)).unwrap();
 
 
-        let dbs_json_path = format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json");
+        let dbs_json_path = format!("{}/{}/{}", file_base_path, "crazyguy", "dbs.json");
         assert!(Path::new(&dbs_json_path).exists());
 
         let dbs_json = fs::read_to_string(dbs_json_path).unwrap();
@@ -557,13 +471,13 @@ mod tests {
         assert_eq!(dbs_json.dbs[0].path, ideal_dbs_json.dbs[0].path);
         assert_eq!(dbs_json.dbs[1].path, ideal_dbs_json.dbs[1].path);
 
-        assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB")).exists());
-        assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "MovieDB")).exists());
+        assert!(Path::new(&format!("{}/{}/{}", file_base_path, "crazyguy", "BookerDB")).exists());
+        assert!(Path::new(&format!("{}/{}/{}", file_base_path, "crazyguy", "MovieDB")).exists());
 
-        assert!(Path::new(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB", "tables.json")).exists());
-        assert!(Path::new(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "MovieDB", "tables.json")).exists());
+        assert!(Path::new(&format!("{}/{}/{}/{}", file_base_path, "crazyguy", "BookerDB", "tables.json")).exists());
+        assert!(Path::new(&format!("{}/{}/{}/{}", file_base_path, "crazyguy", "MovieDB", "tables.json")).exists());
 
-        let tables_json = fs::read_to_string(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB", "tables.json")).unwrap();
+        let tables_json = fs::read_to_string(&format!("{}/{}/{}/{}", file_base_path, "crazyguy", "BookerDB", "tables.json")).unwrap();
         let tables_json: TablesJson = serde_json::from_str(&tables_json).unwrap();
 
         assert_eq!(tables_json.tables.len(), 0);
@@ -573,7 +487,7 @@ mod tests {
             Err(e) => assert_eq!(format!("{}", e), "Specified user name not exists. Please create this username first.")
         };
 
-        match File::create_db("tom6311tom6311", "BookerDB", Some(file_base_path)) {
+        match File::create_db("crazyguy", "BookerDB", Some(file_base_path)) {
             Ok(_) => {}
             Err(e) => assert_eq!(format!("{}", e), "DB already exists and cannot be created again.")
         };
