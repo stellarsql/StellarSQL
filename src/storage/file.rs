@@ -176,7 +176,7 @@ impl File {
         // create a vector of usernames
         let mut usernames = Vec::new();
         for username_info in &usernames_json.usernames {
-            usernames.push(username_info.name.clone())
+            usernames.push(username_info.name.clone());
         }
         Ok(usernames)
     }
@@ -285,19 +285,39 @@ impl File {
         Ok(())
     }
 
-    // pub fn get_db_names() -> Result<Vec<String>, FileError> {
-    //     // read and parse `dbs.json`
-    //     let dbs = fs::read_to_string(DBS_JSON_PATH)?;
-    //     let mut dbs = serde_json::from_str(&dbs)?;
+    pub fn get_dbs(username: &str, file_base_path: Option<&str>) -> Result<Vec<String>, FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
-    //     // create a vector of db names
-    //     let mut ret = Vec::new();
-    //     for db in dbs["dbs"].members_mut() {
-    //         let db_name = db["name"].take_string().ok_or(FileError::DbNotExists)?;
-    //         ret.push(db_name);
-    //     }
-    //     Ok(ret)
-    // }
+        // check if username exists
+        let usernames = File::get_usernames(file_base_path)?;
+        if !usernames.contains(&username.to_string()) {
+            return Err(FileError::UsernameNotExists);
+        }
+
+        // check if username directory exists
+        let username_path = format!("{}/{}", base_path, username);
+        if !Path::new(&username_path).exists() {
+            return Err(FileError::UsernameDirNotExists);
+        }
+
+        // check if `dbs.json` exists
+        let dbs_json_path = format!("{}/{}", username_path, "dbs.json");
+        if !Path::new(&dbs_json_path).exists() {
+            return Err(FileError::DbsJsonNotExists);
+        }
+
+        // read and parse `dbs.json`
+        let dbs_file = fs::File::open(&dbs_json_path)?;
+        let dbs_json: DbsJson = serde_json::from_reader(dbs_file)?;
+
+        // create a vector of dbs
+        let mut dbs = Vec::new();
+        for dbs_info in &dbs_json.dbs {
+            dbs.push(dbs_info.name.clone());
+        }
+        Ok(dbs)
+    }
 
     // pub fn create_table(db_name: &str, new_table: &Table) -> Result<(), FileError> {
     //     // check if db exists
@@ -556,6 +576,34 @@ mod tests {
         match File::create_db("tom6311tom6311", "BookerDB", Some(file_base_path)) {
             Ok(_) => {}
             Err(e) => assert_eq!(format!("{}", e), "DB already exists and cannot be created again.")
+        };
+    }
+
+    #[test]
+    pub fn test_get_dbs() {
+        let file_base_path = "data5";
+        if Path::new(file_base_path).exists() {
+            fs::remove_dir_all(file_base_path).unwrap();
+        }
+
+        File::create_username("happyguy", Some(file_base_path)).unwrap();
+
+        let dbs: Vec<String> = File::get_dbs("happyguy", Some(file_base_path)).unwrap();
+        assert_eq!(dbs.len(), 0);
+
+        File::create_db("happyguy", "BookerDB", Some(file_base_path)).unwrap();
+
+        let dbs: Vec<String> = File::get_dbs("happyguy", Some(file_base_path)).unwrap();
+        assert_eq!(dbs, vec!["BookerDB"]);
+
+        File::create_db("happyguy", "MovieDB", Some(file_base_path)).unwrap();
+
+        let dbs: Vec<String> = File::get_dbs("happyguy", Some(file_base_path)).unwrap();
+        assert_eq!(dbs, vec!["BookerDB", "MovieDB"]);
+
+        match File::get_dbs("sadguy", Some(file_base_path)) {
+            Ok(_) => {}
+            Err(e) => assert_eq!(format!("{}", e), "Specified user name not exists. Please create this username first.")
         };
     }
 }
