@@ -10,6 +10,7 @@ use std::io::Write;
 #[derive(Debug, Clone)]
 pub struct File {
     /* definition */
+    // Ideally, File is a stateless struct
 }
 
 #[derive(Debug)]
@@ -319,7 +320,57 @@ impl File {
         Ok(dbs)
     }
 
-    // TODO: remove_db(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<(), FileError>
+    pub fn remove_db(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+        // check if username exists
+        let usernames = File::get_usernames(file_base_path)?;
+        if !usernames.contains(&username.to_string()) {
+            return Err(FileError::UsernameNotExists);
+        }
+
+        // check if username directory exists
+        let username_path = format!("{}/{}", base_path, username);
+        if !Path::new(&username_path).exists() {
+            return Err(FileError::UsernameDirNotExists);
+        }
+
+        // check if `dbs.json` exists
+        let dbs_json_path = format!("{}/{}", username_path, "dbs.json");
+        if !Path::new(&dbs_json_path).exists() {
+            return Err(FileError::DbsJsonNotExists);
+        }
+
+        // load current dbs from `dbs.json`
+        let dbs_file = fs::File::open(&dbs_json_path)?;
+        let mut dbs_json: DbsJson = serde_json::from_reader(dbs_file)?;
+
+        // remove if the db exists; otherwise raise error
+        let idx_to_remove = dbs_json.dbs
+                .iter()
+                .position(|db_info| &db_info.name == db_name);
+        match idx_to_remove {
+            Some(idx) => dbs_json.dbs.remove(idx),
+            None => return Err(FileError::DbNotExists)
+        };
+
+        // remove corresponding db directory
+        let db_path = format!("{}/{}", username_path, db_name);
+        if Path::new(&db_path).exists() {
+            fs::remove_dir_all(&db_path)?;
+        }
+
+        // overwrite `dbs.json`
+        let mut dbs_file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(dbs_json_path)?;
+        dbs_file.write_all(serde_json::to_string_pretty(&dbs_json)?.as_bytes())?;
+
+        Ok(())
+    }
 
     // TODO: create_table(username: &str, db_name: &str, table: &TableInfo, file_base_path: Option<&str>) -> Result<(), FileError>
 
@@ -519,5 +570,49 @@ mod tests {
             Ok(_) => {}
             Err(e) => assert_eq!(format!("{}", e), "Specified user name not exists. Please create this username first.")
         };
+    }
+
+    #[test]
+    pub fn test_remove_db() {
+        let file_base_path = "data6";
+        if Path::new(file_base_path).exists() {
+            fs::remove_dir_all(file_base_path).unwrap();
+        }
+        File::create_username("crazyguy", Some(file_base_path)).unwrap();
+        File::create_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
+        File::create_db("crazyguy", "MovieDB", Some(file_base_path)).unwrap();
+        File::create_db("crazyguy", "PhotoDB", Some(file_base_path)).unwrap();
+
+        let dbs: Vec<String> = File::get_dbs("crazyguy", Some(file_base_path)).unwrap();
+        assert_eq!(dbs, vec!["BookerDB", "MovieDB", "PhotoDB"]);
+
+        File::remove_db("crazyguy", "MovieDB", Some(file_base_path)).unwrap();
+
+        let dbs: Vec<String> = File::get_dbs("crazyguy", Some(file_base_path)).unwrap();
+        assert_eq!(dbs, vec!["BookerDB", "PhotoDB"]);
+
+        match File::remove_db("happyguy", "BookerDB", Some(file_base_path)) {
+            Ok(_) => {}
+            Err(e) => assert_eq!(format!("{}", e), "Specified user name not exists. Please create this username first.")
+        };
+
+        File::remove_db("crazyguy", "PhotoDB", Some(file_base_path)).unwrap();
+
+        let dbs: Vec<String> = File::get_dbs("crazyguy", Some(file_base_path)).unwrap();
+        assert_eq!(dbs, vec!["BookerDB"]);
+
+        match File::remove_db("crazyguy", "PhotoDB", Some(file_base_path)) {
+            Ok(_) => {}
+            Err(e) => assert_eq!(format!("{}", e), "DB not exists. Please create DB first.")
+        };
+
+        File::remove_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
+
+        let dbs: Vec<String> = File::get_dbs("crazyguy", Some(file_base_path)).unwrap();
+        assert_eq!(dbs.len(), 0);
+
+        assert!(!Path::new(&format!("{}/{}/{}", file_base_path, "crazyguy", "BookerDB")).exists());
+        assert!(!Path::new(&format!("{}/{}/{}", file_base_path, "crazyguy", "MovieDB")).exists());
+        assert!(!Path::new(&format!("{}/{}/{}", file_base_path, "crazyguy", "PhotoDB")).exists());
     }
 }
