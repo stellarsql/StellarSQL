@@ -158,6 +158,20 @@ impl File {
         Ok(())
     }
 
+    pub fn get_usernames() -> Result<Vec<String>, FileError> {
+        // read and parse `usernames.json`
+        let usernames_json_path = format!("{}/{}", FILE_BASE_PATH, "usernames.json");
+        let usernames_file = fs::File::open(&usernames_json_path)?;
+        let usernames_json: UsernamesJson = serde_json::from_reader(usernames_file)?;
+
+        // create a vector of usernames
+        let mut usernames = Vec::new();
+        for username_info in &usernames_json.usernames {
+            usernames.push(username_info.name.clone())
+        }
+        Ok(usernames)
+    }
+
     // pub fn create_db(db_name: &str) -> Result<(), FileError> {
     //     // check if the base data path exists
     //     if !Path::new(FILE_BASE_PATH).exists() {
@@ -382,6 +396,18 @@ pub fn test_create_username() {
         Ok(_) => {}
         Err(e) => assert_eq!(format!("{}", e), "User name already existed and cannot be created again.")
     }
+}
+
+#[test]
+pub fn test_get_usernames() {
+    if Path::new(FILE_BASE_PATH).exists() {
+        fs::remove_dir_all(FILE_BASE_PATH).unwrap();
+    }
+    File::create_username("tom6311tom6311").unwrap();
+    File::create_username("happyguy").unwrap();
+
+    let usernames: Vec<String> = File::get_usernames().unwrap();
+    assert_eq!(usernames, vec!["tom6311tom6311", "happyguy"]);
 }
 
 // #[test]
