@@ -18,6 +18,7 @@ pub struct File {
 pub enum FileError {
     Io,
     UsernameExisted,
+    UsernameNotExisted,
     DbExisted,
     DbNotExisted,
     TableExisted,
@@ -83,6 +84,7 @@ impl fmt::Display for FileError {
         match *self {
             FileError::Io => write!(f, "No such file or directory."),
             FileError::UsernameExisted => write!(f, "User name already existed and cannot be created again."),
+            FileError::UsernameNotExisted => write!(f, "Specified user name not existed."),
             FileError::DbExisted => write!(f, "DB already existed and cannot be created again."),
             FileError::DbNotExisted => write!(f, "DB not existed. Please create DB first."),
             FileError::TableExisted => write!(f, "Table already existed and cannot be created again."),
@@ -134,9 +136,9 @@ impl File {
 
         // save `usernames.json`
         let mut usernames_file = fs::OpenOptions::new()
-            .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(usernames_json_path)?;
         usernames_file.write_all(serde_json::to_string_pretty(&usernames_json)?.as_bytes())?;
 
@@ -150,6 +152,7 @@ impl File {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(dbs_json_path)?;
         let dbs_json = DbsJson{
             dbs: Vec::new()
@@ -174,6 +177,41 @@ impl File {
             usernames.push(username_info.name.clone())
         }
         Ok(usernames)
+    }
+
+    pub fn remove_username(username: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+        // read and parse `usernames.json`
+        let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
+        let usernames_file = fs::File::open(&usernames_json_path)?;
+        let mut usernames_json: UsernamesJson = serde_json::from_reader(usernames_file)?;
+
+        // remove if the username existed; otherwise raise error
+        let idx_to_remove = usernames_json.usernames
+                .iter()
+                .position(|username_info| &username_info.name == username);
+        match idx_to_remove {
+            Some(idx) => usernames_json.usernames.remove(idx),
+            None => return Err(FileError::UsernameNotExisted)
+        };
+
+        // remove corresponding username directory
+        let username_path = format!("{}/{}", base_path, username);
+        if Path::new(&username_path).exists() {
+            fs::remove_dir_all(&username_path)?;
+        }
+
+        // overwrite `usernames.json`
+        let mut usernames_file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(usernames_json_path)?;
+        usernames_file.write_all(serde_json::to_string_pretty(&usernames_json)?.as_bytes())?;
+
+        Ok(())
     }
 
     // pub fn create_db(db_name: &str) -> Result<(), FileError> {
@@ -414,6 +452,40 @@ pub fn test_get_usernames() {
 
     let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
     assert_eq!(usernames, vec!["tom6311tom6311", "happyguy"]);
+}
+
+#[test]
+pub fn test_remove_username() {
+    let file_base_path = "data3";
+    if Path::new(file_base_path).exists() {
+        fs::remove_dir_all(file_base_path).unwrap();
+    }
+    File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+    File::create_username("happyguy", Some(file_base_path)).unwrap();
+    File::create_username("sadguy", Some(file_base_path)).unwrap();
+
+    let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
+    assert_eq!(usernames, vec!["tom6311tom6311", "happyguy", "sadguy"]);
+
+    File::remove_username("happyguy", Some(file_base_path)).unwrap();
+
+    let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
+    assert_eq!(usernames, vec!["tom6311tom6311", "sadguy"]);
+
+    match File::remove_username("happyguy", Some(file_base_path)) {
+        Ok(_) => {}
+        Err(e) => assert_eq!(format!("{}", e), "Specified user name not existed.")
+    }
+
+    File::remove_username("sadguy", Some(file_base_path)).unwrap();
+
+    let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
+    assert_eq!(usernames, vec!["tom6311tom6311"]);
+
+    File::remove_username("tom6311tom6311", Some(file_base_path)).unwrap();
+
+    let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
+    assert_eq!(usernames.len(), 0);
 }
 
 // #[test]
