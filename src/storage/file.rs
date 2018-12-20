@@ -1,4 +1,3 @@
-extern crate serde_json;
 use crate::component::field::Field;
 use std::fmt;
 use std::fs;
