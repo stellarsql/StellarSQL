@@ -9,8 +9,6 @@ use std::path::Path;
 use std::io::Write;
 
 
-static FILE_BASE_PATH: &str = "data";
-
 #[derive(Debug, Clone)]
 pub struct File {
     /* definition */
@@ -97,15 +95,18 @@ impl fmt::Display for FileError {
 }
 
 impl File {
-    pub fn create_username(username: &str) -> Result<(), FileError> {
+    pub fn create_username(username: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
         // check if the base data path exists
-        if !Path::new(FILE_BASE_PATH).exists() {
-            fs::create_dir_all(FILE_BASE_PATH)?;
+        if !Path::new(base_path).exists() {
+            fs::create_dir_all(base_path)?;
         }
 
         // load current usernames from `usernames.json`
         let mut usernames_json: UsernamesJson;
-        let usernames_json_path = format!("{}/{}", FILE_BASE_PATH, "usernames.json");
+        let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
         if Path::new(&usernames_json_path).exists() {
             let usernames_file = fs::File::open(&usernames_json_path)?;
             usernames_json = serde_json::from_reader(usernames_file)?;
@@ -140,7 +141,7 @@ impl File {
         usernames_file.write_all(serde_json::to_string_pretty(&usernames_json)?.as_bytes())?;
 
         // create corresponding directory for the new username
-        let username_path = format!("{}/{}", FILE_BASE_PATH, username);
+        let username_path = format!("{}/{}", base_path, username);
         fs::create_dir_all(&username_path)?;
 
         // create corresponding `dbs.json` for the new username
@@ -158,9 +159,12 @@ impl File {
         Ok(())
     }
 
-    pub fn get_usernames() -> Result<Vec<String>, FileError> {
+    pub fn get_usernames(file_base_path: Option<&str>) -> Result<Vec<String>, FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
         // read and parse `usernames.json`
-        let usernames_json_path = format!("{}/{}", FILE_BASE_PATH, "usernames.json");
+        let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
         let usernames_file = fs::File::open(&usernames_json_path)?;
         let usernames_json: UsernamesJson = serde_json::from_reader(usernames_file)?;
 
@@ -250,7 +254,7 @@ impl File {
     //     // check if db exists
     //     let db_path = format!("{}/{}", FILE_BASE_PATH, db_name);
     //     if !Path::new(&db_path).exists() {
-    //         return Err(FileError::DbNotExisted);          
+    //         return Err(FileError::DbNotExisted);
     //     }
 
     //     // parse tables.json
@@ -300,7 +304,7 @@ impl File {
     //         .create(true)
     //         .open(tables_json_path)?;
     //     tables_file.write_all(tables.pretty(4).as_bytes())?;
-        
+
     //     // write tsv
     //     let table_tsv_path = format!("{}/{}/{}.tsv", db_path, new_table.name, new_table.name);
     //     let mut table_tsv = fs::OpenOptions::new()
@@ -349,15 +353,16 @@ impl File {
 
 #[test]
 pub fn test_create_username() {
-    if Path::new(FILE_BASE_PATH).exists() {
-        fs::remove_dir_all(FILE_BASE_PATH).unwrap();
+    let file_base_path = "data1";
+    if Path::new(file_base_path).exists() {
+        fs::remove_dir_all(file_base_path).unwrap();
     }
-    File::create_username("tom6311tom6311").unwrap();
-    File::create_username("happyguy").unwrap();
+    File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+    File::create_username("happyguy", Some(file_base_path)).unwrap();
 
-    assert!(Path::new(FILE_BASE_PATH).exists());
+    assert!(Path::new(file_base_path).exists());
 
-    let usernames_json_path = format!("{}/{}", FILE_BASE_PATH, "usernames.json");
+    let usernames_json_path = format!("{}/{}", file_base_path, "usernames.json");
     assert!(Path::new(&usernames_json_path).exists());
 
     let usernames_json = fs::read_to_string(usernames_json_path).unwrap();
@@ -381,18 +386,18 @@ pub fn test_create_username() {
     assert_eq!(usernames_json.usernames[0].path, ideal_usernames_json.usernames[0].path);
     assert_eq!(usernames_json.usernames[1].path, ideal_usernames_json.usernames[1].path);
 
-    assert!(Path::new(&format!("{}/{}", FILE_BASE_PATH, "tom6311tom6311")).exists());
-    assert!(Path::new(&format!("{}/{}", FILE_BASE_PATH, "happyguy")).exists());
+    assert!(Path::new(&format!("{}/{}", file_base_path, "tom6311tom6311")).exists());
+    assert!(Path::new(&format!("{}/{}", file_base_path, "happyguy")).exists());
 
-    assert!(Path::new(&format!("{}/{}/{}", FILE_BASE_PATH, "tom6311tom6311", "dbs.json")).exists());
-    assert!(Path::new(&format!("{}/{}/{}", FILE_BASE_PATH, "happyguy", "dbs.json")).exists());
+    assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json")).exists());
+    assert!(Path::new(&format!("{}/{}/{}", file_base_path, "happyguy", "dbs.json")).exists());
 
-    let dbs_json = fs::read_to_string(format!("{}/{}/{}", FILE_BASE_PATH, "tom6311tom6311", "dbs.json")).unwrap();
+    let dbs_json = fs::read_to_string(format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json")).unwrap();
     let dbs_json: DbsJson = serde_json::from_str(&dbs_json).unwrap();
 
     assert_eq!(dbs_json.dbs.len(), 0);
 
-    match File::create_username("happyguy") {
+    match File::create_username("happyguy", Some(file_base_path)) {
         Ok(_) => {}
         Err(e) => assert_eq!(format!("{}", e), "User name already existed and cannot be created again.")
     }
@@ -400,13 +405,14 @@ pub fn test_create_username() {
 
 #[test]
 pub fn test_get_usernames() {
-    if Path::new(FILE_BASE_PATH).exists() {
-        fs::remove_dir_all(FILE_BASE_PATH).unwrap();
+    let file_base_path = "data2";
+    if Path::new(file_base_path).exists() {
+        fs::remove_dir_all(file_base_path).unwrap();
     }
-    File::create_username("tom6311tom6311").unwrap();
-    File::create_username("happyguy").unwrap();
+    File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+    File::create_username("happyguy", Some(file_base_path)).unwrap();
 
-    let usernames: Vec<String> = File::get_usernames().unwrap();
+    let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
     assert_eq!(usernames, vec!["tom6311tom6311", "happyguy"]);
 }
 
