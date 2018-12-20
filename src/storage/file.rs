@@ -22,11 +22,7 @@ pub enum FileError {
     DbsJsonNotExists,
     DbExists,
     DbNotExists,
-    TableExists,
     JsonParse,
-    JsonKeyNotFound,
-    JsonArrayMismatch,
-    UnknownError,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -90,11 +86,7 @@ impl fmt::Display for FileError {
             FileError::DbsJsonNotExists => write!(f, "The `dbs.json` of the username is losed"),
             FileError::DbExists => write!(f, "DB already exists and cannot be created again."),
             FileError::DbNotExists => write!(f, "DB not exists. Please create DB first."),
-            FileError::TableExists => write!(f, "Table already exists and cannot be created again."),
-            FileError::JsonParse => write!(f, "JSON parsing error."),
-            FileError::JsonKeyNotFound => write!(f, "Key cannot be found in the JSON structure."),
-            FileError::JsonArrayMismatch => write!(f, "The value is expected to be an array."),
-            FileError::UnknownError => write!(f, "Unknown error."),
+            FileError::JsonParse => write!(f, "JSON parsing error.")
         }
     }
 }
