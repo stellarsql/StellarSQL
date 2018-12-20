@@ -1,6 +1,4 @@
 extern crate serde_json;
-use crate::component::table::Table;
-use crate::component::datatype::DataType;
 use crate::component::field::Field;
 use std::io;
 use std::fs;
@@ -17,11 +15,13 @@ pub struct File {
 #[derive(Debug)]
 pub enum FileError {
     Io,
-    UsernameExisted,
-    UsernameNotExisted,
-    DbExisted,
-    DbNotExisted,
-    TableExisted,
+    UsernameExists,
+    UsernameNotExists,
+    UsernameDirNotExists,
+    DbsJsonNotExists,
+    DbExists,
+    DbNotExists,
+    TableExists,
     JsonParse,
     JsonKeyNotFound,
     JsonArrayMismatch,
@@ -50,22 +50,22 @@ struct DbInfo {
     path: String,
 }
 
-// #[derive(Debug, Serialize, Deserialize)]
-// struct TablesJson {
-//     dbs: Vec<TableInfo>,
-// }
+#[derive(Debug, Serialize, Deserialize)]
+struct TablesJson {
+    tables: Vec<TableInfo>,
+}
 
-// #[derive(Debug, Serialize, Deserialize)]
-// struct TableInfo {
-//     name: String,
-//     path_tsv: String,
-//     path_bin: String,
-//     primary_key: Vec<String>,
-//     foreign_key: Vec<String>,
-//     reference_table: Option<String>,
-//     reference_attr: Option<String>,
-//     attrs: Vec<Field>,
-// }
+#[derive(Debug, Serialize, Deserialize)]
+struct TableInfo {
+    name: String,
+    path_tsv: String,
+    path_bin: String,
+    primary_key: Vec<String>,
+    foreign_key: Vec<String>,
+    reference_table: Option<String>,
+    reference_attr: Option<String>,
+    attrs: Vec<Field>,
+}
 
 impl From<io::Error> for FileError {
     fn from(_err: io::Error) -> FileError {
@@ -83,11 +83,13 @@ impl fmt::Display for FileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             FileError::Io => write!(f, "No such file or directory."),
-            FileError::UsernameExisted => write!(f, "User name already existed and cannot be created again."),
-            FileError::UsernameNotExisted => write!(f, "Specified user name not existed."),
-            FileError::DbExisted => write!(f, "DB already existed and cannot be created again."),
-            FileError::DbNotExisted => write!(f, "DB not existed. Please create DB first."),
-            FileError::TableExisted => write!(f, "Table already existed and cannot be created again."),
+            FileError::UsernameExists => write!(f, "User name already exists and cannot be created again."),
+            FileError::UsernameNotExists => write!(f, "Specified user name not exists. Please create this username first."),
+            FileError::UsernameDirNotExists => write!(f, "Username exists but corresponding data folder losed."),
+            FileError::DbsJsonNotExists => write!(f, "The `dbs.json` of the username is losed"),
+            FileError::DbExists => write!(f, "DB already exists and cannot be created again."),
+            FileError::DbNotExists => write!(f, "DB not exists. Please create DB first."),
+            FileError::TableExists => write!(f, "Table already exists and cannot be created again."),
             FileError::JsonParse => write!(f, "JSON parsing error."),
             FileError::JsonKeyNotFound => write!(f, "Key cannot be found in the JSON structure."),
             FileError::JsonArrayMismatch => write!(f, "The value is expected to be an array."),
@@ -118,10 +120,10 @@ impl File {
             };
         }
 
-        // check if the username existed
+        // check if the username exists
         for username_info in &usernames_json.usernames {
             if username_info.name == username {
-                return Err(FileError::UsernameExisted);
+                return Err(FileError::UsernameExists);
             }
         }
 
@@ -188,13 +190,13 @@ impl File {
         let usernames_file = fs::File::open(&usernames_json_path)?;
         let mut usernames_json: UsernamesJson = serde_json::from_reader(usernames_file)?;
 
-        // remove if the username existed; otherwise raise error
+        // remove if the username exists; otherwise raise error
         let idx_to_remove = usernames_json.usernames
                 .iter()
                 .position(|username_info| &username_info.name == username);
         match idx_to_remove {
             Some(idx) => usernames_json.usernames.remove(idx),
-            None => return Err(FileError::UsernameNotExisted)
+            None => return Err(FileError::UsernameNotExists)
         };
 
         // remove corresponding username directory
@@ -214,65 +216,74 @@ impl File {
         Ok(())
     }
 
-    // pub fn create_db(db_name: &str) -> Result<(), FileError> {
-    //     // check if the base data path exists
-    //     if !Path::new(FILE_BASE_PATH).exists() {
-    //         fs::create_dir_all(FILE_BASE_PATH)?;
-    //     }
+    pub fn create_db(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
-    //     // insert the new db record into `dbs.json`
-    //     let mut dbs: serde_json::Value;
-    //     if Path::new(DBS_JSON_PATH).exists() {
-    //         let dbs_file = fs::File::open(DBS_JSON_PATH)?;
-    //         dbs = serde_json::from_reader(dbs_file)?;
-    //     } else {
-    //         dbs = json!({
-    //             "dbs": json!([])
-    //         });
-    //     }
+        // check if username exists
+        let usernames = File::get_usernames(file_base_path)?;
+        if !usernames.contains(&username.to_string()) {
+            return Err(FileError::UsernameNotExists);
+        }
 
-    //     let new_db = json!({
-    //         "name": db_name,
-    //         "path": db_name
-    //     });
+        // check if username directory exists
+        let username_path = format!("{}/{}", base_path, username);
+        if !Path::new(&username_path).exists() {
+            return Err(FileError::UsernameDirNotExists);
+        }
 
-    //     // check if the db existed
-    //     for db in dbs.get("dbs")
-    //         .ok_or(FileError::JsonKeyNotFound)?
-    //         .as_array().ok_or(FileError::JsonArrayMismatch)? {
-    //         if db.get("name").ok_or(FileError::JsonKeyNotFound)? == new_db.get("name").ok_or(FileError::JsonKeyNotFound)? {
-    //             return Err(FileError::DbExisted);
-    //         }
-    //     }
+        // check if `dbs.json` exists
+        let dbs_json_path = format!("{}/{}", username_path, "dbs.json");
+        if !Path::new(&dbs_json_path).exists() {
+            return Err(FileError::DbsJsonNotExists);
+        }
 
-    //     dbs.get_mut("dbs").ok_or(FileError::JsonKeyNotFound)?.as_array_mut().ok_or(FileError::JsonArrayMismatch)?.push(new_db);
+        // load current dbs from `dbs.json`
+        let dbs_file = fs::File::open(&dbs_json_path)?;
+        let mut dbs_json: DbsJson = serde_json::from_reader(dbs_file)?;
 
-    //     // save `dbs.json`
-    //     let mut dbs_file = fs::OpenOptions::new()
-    //         .read(true)
-    //         .write(true)
-    //         .create(true)
-    //         .open(DBS_JSON_PATH)?;
-    //     dbs_file.write_all(serde_json::to_string_pretty(&dbs)?.as_bytes())?;
+        // check if the db exists
+        for db_info in &dbs_json.dbs {
+            if db_info.name == db_name {
+                return Err(FileError::DbExists);
+            }
+        }
 
-    //     // create corresponding db directory for the new db
-    //     let db_path = format!("{}/{}", FILE_BASE_PATH, db_name);
-    //     fs::create_dir_all(&db_path)?;
+        // create new db json instance
+        let new_db_info = DbInfo {
+            name: db_name.to_string(),
+            path: db_name.to_string()
+        };
 
-    //     // create corresponding `tables.json` for the new db
-    //     let tables_json_path = format!("{}/{}", db_path, "tables.json");
-    //     let mut tables_file = fs::OpenOptions::new()
-    //         .read(true)
-    //         .write(true)
-    //         .create(true)
-    //         .open(tables_json_path)?;
-    //     let tables = json!({
-    //         "tables": json!([])
-    //     });
-    //     tables_file.write_all(serde_json::to_string_pretty(&tables)?.as_bytes())?;
+        // insert the new db record into `dbs.json`
+        dbs_json.dbs.push(new_db_info);
 
-    //     Ok(())
-    // }
+        // save `dbs.json`
+        let mut dbs_file = fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(dbs_json_path)?;
+        dbs_file.write_all(serde_json::to_string_pretty(&dbs_json)?.as_bytes())?;
+
+        // create corresponding directory for the db
+        let db_path = format!("{}/{}", username_path, db_name);
+        fs::create_dir_all(&db_path)?;
+
+        // create corresponding `tables.json` for the new db
+        let tables_json_path = format!("{}/{}", db_path, "tables.json");
+        let mut tables_file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(tables_json_path)?;
+        let tables_json = TablesJson{
+            tables: Vec::new()
+        };
+        tables_file.write_all(serde_json::to_string_pretty(&tables_json)?.as_bytes())?;
+
+        Ok(())
+    }
 
     // pub fn get_db_names() -> Result<Vec<String>, FileError> {
     //     // read and parse `dbs.json`
@@ -282,7 +293,7 @@ impl File {
     //     // create a vector of db names
     //     let mut ret = Vec::new();
     //     for db in dbs["dbs"].members_mut() {
-    //         let db_name = db["name"].take_string().ok_or(FileError::DbNotExisted)?;
+    //         let db_name = db["name"].take_string().ok_or(FileError::DbNotExists)?;
     //         ret.push(db_name);
     //     }
     //     Ok(ret)
@@ -292,7 +303,7 @@ impl File {
     //     // check if db exists
     //     let db_path = format!("{}/{}", FILE_BASE_PATH, db_name);
     //     if !Path::new(&db_path).exists() {
-    //         return Err(FileError::DbNotExisted);
+    //         return Err(FileError::DbNotExists);
     //     }
 
     //     // parse tables.json
@@ -303,7 +314,7 @@ impl File {
     //     // check if the table exists
     //     for t in tables["tables"].members() {
     //         if t["name"] == new_table["name"] {
-    //             return Err(FileError::TableExisted);
+    //             return Err(FileError::TableExists);
     //         }
     //     }
 
@@ -437,8 +448,8 @@ pub fn test_create_username() {
 
     match File::create_username("happyguy", Some(file_base_path)) {
         Ok(_) => {}
-        Err(e) => assert_eq!(format!("{}", e), "User name already existed and cannot be created again.")
-    }
+        Err(e) => assert_eq!(format!("{}", e), "User name already exists and cannot be created again.")
+    };
 }
 
 #[test]
@@ -474,8 +485,8 @@ pub fn test_remove_username() {
 
     match File::remove_username("happyguy", Some(file_base_path)) {
         Ok(_) => {}
-        Err(e) => assert_eq!(format!("{}", e), "Specified user name not existed.")
-    }
+        Err(e) => assert_eq!(format!("{}", e), "Specified user name not exists. Please create this username first.")
+    };
 
     File::remove_username("sadguy", Some(file_base_path)).unwrap();
 
@@ -488,60 +499,59 @@ pub fn test_remove_username() {
     assert_eq!(usernames.len(), 0);
 }
 
-// #[test]
-// pub fn test_create_db() {
-//     if Path::new("data").exists() {
-//         fs::remove_dir_all("data").unwrap();
-//     }
-//     File::create_db("BookerDB").unwrap();
-//     File::create_db("MovieDB").unwrap();
+#[test]
+pub fn test_create_db() {
+    let file_base_path = "data4";
+    if Path::new(file_base_path).exists() {
+        fs::remove_dir_all(file_base_path).unwrap();
+    }
+    File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+    File::create_db("tom6311tom6311", "BookerDB", Some(file_base_path)).unwrap();
+    File::create_db("tom6311tom6311", "MovieDB", Some(file_base_path)).unwrap();
 
-//     assert!(Path::new("data").exists());
-//     assert!(Path::new("data/dbs.json").exists());
 
-//     let dbs = fs::read_to_string("data/dbs.json").unwrap();
-//     let dbs: serde_json::Value = serde_json::from_str(&dbs).unwrap();
+    let dbs_json_path = format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json");
+    assert!(Path::new(&dbs_json_path).exists());
 
-//     assert_eq!(dbs, json!({
-//         "dbs": json!([
-//             json!({
-//                 "name": "BookerDB",
-//                 "path": "BookerDB"
-//             }),
-//             json!({
-//                 "name": "MovieDB",
-//                 "path": "MovieDB"
-//             })
-//         ])
-//     }));
+    let dbs_json = fs::read_to_string(dbs_json_path).unwrap();
+    let dbs_json: DbsJson = serde_json::from_str(&dbs_json).unwrap();
 
-//     assert!(Path::new("data/BookerDB").exists());
-//     assert!(Path::new("data/MovieDB").exists());
+    let ideal_dbs_json = DbsJson {
+        dbs: vec![
+            DbInfo {
+                name: "BookerDB".to_string(),
+                path: "BookerDB".to_string()
+            },
+            DbInfo {
+                name: "MovieDB".to_string(),
+                path: "MovieDB".to_string()
+            }
+        ]
+    };
 
-//     assert!(Path::new("data/BookerDB/tables.json").exists());
-//     assert!(Path::new("data/MovieDB/tables.json").exists());
+    assert_eq!(dbs_json.dbs[0].name, ideal_dbs_json.dbs[0].name);
+    assert_eq!(dbs_json.dbs[1].name, ideal_dbs_json.dbs[1].name);
+    assert_eq!(dbs_json.dbs[0].path, ideal_dbs_json.dbs[0].path);
+    assert_eq!(dbs_json.dbs[1].path, ideal_dbs_json.dbs[1].path);
 
-//     let tables = fs::read_to_string("data/BookerDB/tables.json").unwrap();
-//     let tables: serde_json::Value = serde_json::from_str(&tables).unwrap();
+    assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB")).exists());
+    assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "MovieDB")).exists());
 
-//     assert_eq!(tables, json!({
-//         "tables": json!([])
-//     }));
+    assert!(Path::new(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB", "tables.json")).exists());
+    assert!(Path::new(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "MovieDB", "tables.json")).exists());
 
-//     match File::create_db("MovieDB") {
-//         Ok(_) => {}
-//         Err(e) => assert_eq!(format!("{}", e), "DB already existed and cannot be created again.")
-//     }
-// }
+    let tables_json = fs::read_to_string(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB", "tables.json")).unwrap();
+    let tables_json: TablesJson = serde_json::from_str(&tables_json).unwrap();
 
-// #[test]
-// pub fn test_get_db_names() {
-//     if Path::new("data").exists() {
-//         fs::remove_dir_all("data").unwrap();
-//     }
-//     File::create_db("BookerDB").unwrap();
-//     File::create_db("MovieDB").unwrap();
+    assert_eq!(tables_json.tables.len(), 0);
 
-//     let db_names: Vec<String> = File::get_db_names().unwrap();
-//     assert_eq!(db_names, vec!["BookerDB", "MovieDB"]);
-// }
+    match File::create_db("happyguy", "BookerDB", Some(file_base_path)) {
+        Ok(_) => {}
+        Err(e) => assert_eq!(format!("{}", e), "Specified user name not exists. Please create this username first.")
+    };
+
+    match File::create_db("tom6311tom6311", "BookerDB", Some(file_base_path)) {
+        Ok(_) => {}
+        Err(e) => assert_eq!(format!("{}", e), "DB already exists and cannot be created again.")
+    };
+}
