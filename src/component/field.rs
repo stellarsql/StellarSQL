@@ -1,6 +1,6 @@
 use crate::component::datatype::DataType;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Field {
     pub name: String,
     pub datatype: DataType,
@@ -9,13 +9,13 @@ pub struct Field {
     pub check: Checker,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Checker {
     None,
     Some(Operator, String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Operator {
     LT, // <
     LE, // <=

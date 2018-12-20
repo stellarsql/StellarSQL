@@ -4,6 +4,8 @@ extern crate clap;
 extern crate dotenv_codegen;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate serde_derive;
 
 mod component;
 mod connection;
