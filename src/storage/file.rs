@@ -400,158 +400,162 @@ impl File {
     // }
 }
 
-#[test]
-pub fn test_create_username() {
-    let file_base_path = "data1";
-    if Path::new(file_base_path).exists() {
-        fs::remove_dir_all(file_base_path).unwrap();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    pub fn test_create_username() {
+        let file_base_path = "data1";
+        if Path::new(file_base_path).exists() {
+            fs::remove_dir_all(file_base_path).unwrap();
+        }
+        File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+        File::create_username("happyguy", Some(file_base_path)).unwrap();
+
+        assert!(Path::new(file_base_path).exists());
+
+        let usernames_json_path = format!("{}/{}", file_base_path, "usernames.json");
+        assert!(Path::new(&usernames_json_path).exists());
+
+        let usernames_json = fs::read_to_string(usernames_json_path).unwrap();
+        let usernames_json: UsernamesJson = serde_json::from_str(&usernames_json).unwrap();
+
+        let ideal_usernames_json = UsernamesJson {
+            usernames: vec![
+                UsernameInfo {
+                    name: "tom6311tom6311".to_string(),
+                    path: "tom6311tom6311".to_string()
+                },
+                UsernameInfo {
+                    name: "happyguy".to_string(),
+                    path: "happyguy".to_string()
+                }
+            ]
+        };
+
+        assert_eq!(usernames_json.usernames[0].name, ideal_usernames_json.usernames[0].name);
+        assert_eq!(usernames_json.usernames[1].name, ideal_usernames_json.usernames[1].name);
+        assert_eq!(usernames_json.usernames[0].path, ideal_usernames_json.usernames[0].path);
+        assert_eq!(usernames_json.usernames[1].path, ideal_usernames_json.usernames[1].path);
+
+        assert!(Path::new(&format!("{}/{}", file_base_path, "tom6311tom6311")).exists());
+        assert!(Path::new(&format!("{}/{}", file_base_path, "happyguy")).exists());
+
+        assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json")).exists());
+        assert!(Path::new(&format!("{}/{}/{}", file_base_path, "happyguy", "dbs.json")).exists());
+
+        let dbs_json = fs::read_to_string(format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json")).unwrap();
+        let dbs_json: DbsJson = serde_json::from_str(&dbs_json).unwrap();
+
+        assert_eq!(dbs_json.dbs.len(), 0);
+
+        match File::create_username("happyguy", Some(file_base_path)) {
+            Ok(_) => {}
+            Err(e) => assert_eq!(format!("{}", e), "User name already exists and cannot be created again.")
+        };
     }
-    File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
-    File::create_username("happyguy", Some(file_base_path)).unwrap();
 
-    assert!(Path::new(file_base_path).exists());
+    #[test]
+    pub fn test_get_usernames() {
+        let file_base_path = "data2";
+        if Path::new(file_base_path).exists() {
+            fs::remove_dir_all(file_base_path).unwrap();
+        }
+        File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+        File::create_username("happyguy", Some(file_base_path)).unwrap();
 
-    let usernames_json_path = format!("{}/{}", file_base_path, "usernames.json");
-    assert!(Path::new(&usernames_json_path).exists());
-
-    let usernames_json = fs::read_to_string(usernames_json_path).unwrap();
-    let usernames_json: UsernamesJson = serde_json::from_str(&usernames_json).unwrap();
-
-    let ideal_usernames_json = UsernamesJson {
-        usernames: vec![
-            UsernameInfo {
-                name: "tom6311tom6311".to_string(),
-                path: "tom6311tom6311".to_string()
-            },
-            UsernameInfo {
-                name: "happyguy".to_string(),
-                path: "happyguy".to_string()
-            }
-        ]
-    };
-
-    assert_eq!(usernames_json.usernames[0].name, ideal_usernames_json.usernames[0].name);
-    assert_eq!(usernames_json.usernames[1].name, ideal_usernames_json.usernames[1].name);
-    assert_eq!(usernames_json.usernames[0].path, ideal_usernames_json.usernames[0].path);
-    assert_eq!(usernames_json.usernames[1].path, ideal_usernames_json.usernames[1].path);
-
-    assert!(Path::new(&format!("{}/{}", file_base_path, "tom6311tom6311")).exists());
-    assert!(Path::new(&format!("{}/{}", file_base_path, "happyguy")).exists());
-
-    assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json")).exists());
-    assert!(Path::new(&format!("{}/{}/{}", file_base_path, "happyguy", "dbs.json")).exists());
-
-    let dbs_json = fs::read_to_string(format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json")).unwrap();
-    let dbs_json: DbsJson = serde_json::from_str(&dbs_json).unwrap();
-
-    assert_eq!(dbs_json.dbs.len(), 0);
-
-    match File::create_username("happyguy", Some(file_base_path)) {
-        Ok(_) => {}
-        Err(e) => assert_eq!(format!("{}", e), "User name already exists and cannot be created again.")
-    };
-}
-
-#[test]
-pub fn test_get_usernames() {
-    let file_base_path = "data2";
-    if Path::new(file_base_path).exists() {
-        fs::remove_dir_all(file_base_path).unwrap();
+        let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
+        assert_eq!(usernames, vec!["tom6311tom6311", "happyguy"]);
     }
-    File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
-    File::create_username("happyguy", Some(file_base_path)).unwrap();
 
-    let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
-    assert_eq!(usernames, vec!["tom6311tom6311", "happyguy"]);
-}
+    #[test]
+    pub fn test_remove_username() {
+        let file_base_path = "data3";
+        if Path::new(file_base_path).exists() {
+            fs::remove_dir_all(file_base_path).unwrap();
+        }
+        File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+        File::create_username("happyguy", Some(file_base_path)).unwrap();
+        File::create_username("sadguy", Some(file_base_path)).unwrap();
 
-#[test]
-pub fn test_remove_username() {
-    let file_base_path = "data3";
-    if Path::new(file_base_path).exists() {
-        fs::remove_dir_all(file_base_path).unwrap();
+        let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
+        assert_eq!(usernames, vec!["tom6311tom6311", "happyguy", "sadguy"]);
+
+        File::remove_username("happyguy", Some(file_base_path)).unwrap();
+
+        let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
+        assert_eq!(usernames, vec!["tom6311tom6311", "sadguy"]);
+
+        match File::remove_username("happyguy", Some(file_base_path)) {
+            Ok(_) => {}
+            Err(e) => assert_eq!(format!("{}", e), "Specified user name not exists. Please create this username first.")
+        };
+
+        File::remove_username("sadguy", Some(file_base_path)).unwrap();
+
+        let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
+        assert_eq!(usernames, vec!["tom6311tom6311"]);
+
+        File::remove_username("tom6311tom6311", Some(file_base_path)).unwrap();
+
+        let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
+        assert_eq!(usernames.len(), 0);
     }
-    File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
-    File::create_username("happyguy", Some(file_base_path)).unwrap();
-    File::create_username("sadguy", Some(file_base_path)).unwrap();
 
-    let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
-    assert_eq!(usernames, vec!["tom6311tom6311", "happyguy", "sadguy"]);
+    #[test]
+    pub fn test_create_db() {
+        let file_base_path = "data4";
+        if Path::new(file_base_path).exists() {
+            fs::remove_dir_all(file_base_path).unwrap();
+        }
+        File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
+        File::create_db("tom6311tom6311", "BookerDB", Some(file_base_path)).unwrap();
+        File::create_db("tom6311tom6311", "MovieDB", Some(file_base_path)).unwrap();
 
-    File::remove_username("happyguy", Some(file_base_path)).unwrap();
 
-    let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
-    assert_eq!(usernames, vec!["tom6311tom6311", "sadguy"]);
+        let dbs_json_path = format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json");
+        assert!(Path::new(&dbs_json_path).exists());
 
-    match File::remove_username("happyguy", Some(file_base_path)) {
-        Ok(_) => {}
-        Err(e) => assert_eq!(format!("{}", e), "Specified user name not exists. Please create this username first.")
-    };
+        let dbs_json = fs::read_to_string(dbs_json_path).unwrap();
+        let dbs_json: DbsJson = serde_json::from_str(&dbs_json).unwrap();
 
-    File::remove_username("sadguy", Some(file_base_path)).unwrap();
+        let ideal_dbs_json = DbsJson {
+            dbs: vec![
+                DbInfo {
+                    name: "BookerDB".to_string(),
+                    path: "BookerDB".to_string()
+                },
+                DbInfo {
+                    name: "MovieDB".to_string(),
+                    path: "MovieDB".to_string()
+                }
+            ]
+        };
 
-    let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
-    assert_eq!(usernames, vec!["tom6311tom6311"]);
+        assert_eq!(dbs_json.dbs[0].name, ideal_dbs_json.dbs[0].name);
+        assert_eq!(dbs_json.dbs[1].name, ideal_dbs_json.dbs[1].name);
+        assert_eq!(dbs_json.dbs[0].path, ideal_dbs_json.dbs[0].path);
+        assert_eq!(dbs_json.dbs[1].path, ideal_dbs_json.dbs[1].path);
 
-    File::remove_username("tom6311tom6311", Some(file_base_path)).unwrap();
+        assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB")).exists());
+        assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "MovieDB")).exists());
 
-    let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
-    assert_eq!(usernames.len(), 0);
-}
+        assert!(Path::new(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB", "tables.json")).exists());
+        assert!(Path::new(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "MovieDB", "tables.json")).exists());
 
-#[test]
-pub fn test_create_db() {
-    let file_base_path = "data4";
-    if Path::new(file_base_path).exists() {
-        fs::remove_dir_all(file_base_path).unwrap();
+        let tables_json = fs::read_to_string(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB", "tables.json")).unwrap();
+        let tables_json: TablesJson = serde_json::from_str(&tables_json).unwrap();
+
+        assert_eq!(tables_json.tables.len(), 0);
+
+        match File::create_db("happyguy", "BookerDB", Some(file_base_path)) {
+            Ok(_) => {}
+            Err(e) => assert_eq!(format!("{}", e), "Specified user name not exists. Please create this username first.")
+        };
+
+        match File::create_db("tom6311tom6311", "BookerDB", Some(file_base_path)) {
+            Ok(_) => {}
+            Err(e) => assert_eq!(format!("{}", e), "DB already exists and cannot be created again.")
+        };
     }
-    File::create_username("tom6311tom6311", Some(file_base_path)).unwrap();
-    File::create_db("tom6311tom6311", "BookerDB", Some(file_base_path)).unwrap();
-    File::create_db("tom6311tom6311", "MovieDB", Some(file_base_path)).unwrap();
-
-
-    let dbs_json_path = format!("{}/{}/{}", file_base_path, "tom6311tom6311", "dbs.json");
-    assert!(Path::new(&dbs_json_path).exists());
-
-    let dbs_json = fs::read_to_string(dbs_json_path).unwrap();
-    let dbs_json: DbsJson = serde_json::from_str(&dbs_json).unwrap();
-
-    let ideal_dbs_json = DbsJson {
-        dbs: vec![
-            DbInfo {
-                name: "BookerDB".to_string(),
-                path: "BookerDB".to_string()
-            },
-            DbInfo {
-                name: "MovieDB".to_string(),
-                path: "MovieDB".to_string()
-            }
-        ]
-    };
-
-    assert_eq!(dbs_json.dbs[0].name, ideal_dbs_json.dbs[0].name);
-    assert_eq!(dbs_json.dbs[1].name, ideal_dbs_json.dbs[1].name);
-    assert_eq!(dbs_json.dbs[0].path, ideal_dbs_json.dbs[0].path);
-    assert_eq!(dbs_json.dbs[1].path, ideal_dbs_json.dbs[1].path);
-
-    assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB")).exists());
-    assert!(Path::new(&format!("{}/{}/{}", file_base_path, "tom6311tom6311", "MovieDB")).exists());
-
-    assert!(Path::new(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB", "tables.json")).exists());
-    assert!(Path::new(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "MovieDB", "tables.json")).exists());
-
-    let tables_json = fs::read_to_string(&format!("{}/{}/{}/{}", file_base_path, "tom6311tom6311", "BookerDB", "tables.json")).unwrap();
-    let tables_json: TablesJson = serde_json::from_str(&tables_json).unwrap();
-
-    assert_eq!(tables_json.tables.len(), 0);
-
-    match File::create_db("happyguy", "BookerDB", Some(file_base_path)) {
-        Ok(_) => {}
-        Err(e) => assert_eq!(format!("{}", e), "Specified user name not exists. Please create this username first.")
-    };
-
-    match File::create_db("tom6311tom6311", "BookerDB", Some(file_base_path)) {
-        Ok(_) => {}
-        Err(e) => assert_eq!(format!("{}", e), "DB already exists and cannot be created again.")
-    };
 }
