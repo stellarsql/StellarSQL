@@ -29,4 +29,14 @@ impl SQL {
         db.insert_new_table(table.clone());
         Ok(SQL { database: db })
     }
+
+    pub fn insert_into_table(
+        db_name: &str,
+        table_name: &str,
+        attrs: Vec<String>,
+        rows: Vec<Vec<String>>,
+    ) -> Result<SQL, SQLError> {
+        let mut db = Database::load(db_name);
+        Ok(SQL { database: db })
+    }
 }

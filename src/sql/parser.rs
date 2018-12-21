@@ -9,14 +9,16 @@ use crate::sql::symbol::Token;
 use crate::sql::worker::SQLError;
 use crate::sql::worker::SQL;
 use std::fmt;
+use std::iter::Peekable;
+use std::slice::Iter;
 
 #[derive(Debug)]
-struct Parser {
+pub struct Parser {
     tokens: Vec<Symbol>,
 }
 
 #[derive(Debug)]
-enum ParserError {
+pub enum ParserError {
     CauseByLexer(LexerError),
     TokenLengthZero,
     SyntaxError,
@@ -35,7 +37,7 @@ impl fmt::Display for ParserError {
 }
 
 impl Parser {
-    fn new(message: &str) -> Result<Parser, ParserError> {
+    pub fn new(message: &str) -> Result<Parser, ParserError> {
         let mut s: Scanner = Scanner::new(message);
         match s.scan_tokens() {
             Ok(tokens) => {
@@ -47,15 +49,15 @@ impl Parser {
             Err(e) => Err(ParserError::CauseByLexer(e)),
         }
     }
-    fn parse(&self, db_name: Option<String>) -> Result<SQL, ParserError> {
+    pub fn parse(&self, db_name: Option<String>) -> Result<SQL, ParserError> {
         println!("Parser parsing started...");
 
         let mut iter = self.tokens.iter().peekable();
-        let category = iter.next();
 
-        match category {
+        match iter.peek() {
             Some(symbol) => match symbol.token {
                 Token::CreateDatabase => {
+                    let _ = iter.next(); // "create database"
                     let db_name_sym = iter.next().ok_or(ParserError::SyntaxError)?;
 
                     // name should not be as same as keywords
@@ -69,6 +71,7 @@ impl Parser {
                 }
                 Token::CreateTable => {
                     println!("-> create table");
+                    let _ = iter.next();
 
                     let table_name_sym = iter.next().ok_or(ParserError::SyntaxError)?;
 
@@ -179,6 +182,15 @@ impl Parser {
 
                     return Ok(sql);
                 }
+                Token::InsertInto => {
+                    println!("-> insert into table");
+                    let (table_name, attrs, rows) = parser_insert_into_table(&mut iter)?;
+                    let db_name = db_name.ok_or(ParserError::SyntaxError)?;
+                    let sql = SQL::insert_into_table(&db_name, &table_name, attrs, rows)
+                        .map_err(|e| ParserError::SemanticError(e))?;
+
+                    Ok(sql)
+                }
                 _ => {
                     return Err(ParserError::SyntaxError);
                 }
@@ -188,6 +200,80 @@ impl Parser {
             }
         }
     }
+}
+
+#[inline]
+fn parser_insert_into_table(
+    iter: &mut Peekable<Iter<Symbol>>,
+) -> Result<(String, Vec<String>, Vec<Vec<String>>), ParserError> {
+    let _ = iter.next();
+
+    let table_name_sym = iter.next().ok_or(ParserError::SyntaxError)?;
+    if table_name_sym.group != Group::Identifier {
+        return Err(ParserError::SyntaxError);
+    }
+
+    let table_name = table_name_sym.name.clone();
+    println!("   - table name: {}", table_name);
+
+    if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::ParentLeft {
+        return Err(ParserError::SyntaxError);
+    };
+
+    // get attributes
+    let mut attrs = vec![];
+    loop {
+        match iter.next() {
+            Some(s) if s.token == Token::Identifier => {
+                attrs.push(s.name.clone());
+                match iter.next() {
+                    Some(s) if s.token == Token::Comma => continue,
+                    Some(s) if s.token == Token::ParentRight => break,
+                    Some(_) | None => return Err(ParserError::SyntaxError),
+                }
+            }
+            Some(_) | None => return Err(ParserError::SyntaxError),
+        }
+    }
+    println!("   -- attributes: {:?}", attrs);
+
+    if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::Values {
+        return Err(ParserError::SyntaxError);
+    };
+
+    let attrs_num = attrs.len();
+    let mut rows: Vec<Vec<String>> = Vec::new();
+
+    loop {
+        match iter.next() {
+            Some(s) if s.token == Token::ParentLeft => {
+                let mut row = vec![];
+                for i in 0..attrs_num {
+                    let attr = iter.next().ok_or(ParserError::SyntaxError)?.name.clone();
+                    if table_name_sym.group != Group::Identifier {
+                        return Err(ParserError::SyntaxError);
+                    }
+                    row.push(attr);
+                    if i == attrs_num - 1 {
+                        if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::ParentRight {
+                            return Err(ParserError::SyntaxError);
+                        }
+                    } else {
+                        if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::Comma {
+                            return Err(ParserError::SyntaxError);
+                        }
+                    }
+                }
+                println!("   -- row: {:?}", row);
+                rows.push(row);
+            }
+            Some(s) if s.token == Token::Comma => continue,
+            Some(s) if s.token == Token::Semicolon => break,
+            Some(_) | None => return Err(ParserError::SyntaxError),
+        }
+    }
+
+    Ok((table_name, attrs, rows))
 }
 
 #[cfg(test)]
@@ -222,6 +308,56 @@ mod tests {
         assert_eq!(a1.default.clone().unwrap(), "5");
         assert_eq!(b1.not_null, true);
         assert_eq!(c1.default.clone().unwrap(), "1.2");
+    }
+
+    #[test]
+    fn test_insert_into_table() {
+        let query = "insert into t1(a1, a2, a3) values (1, 2, 3), (4, 5, 6);";
+        let parser = Parser::new(query).unwrap();
+        let mut iter = parser.tokens.iter().peekable();
+        let (table_name, attrs, rows) = parser_insert_into_table(&mut iter).unwrap();
+        assert_eq!(table_name, "t1");
+        assert_eq!(attrs, vec![String::from("a1"), String::from("a2"), String::from("a3")]);
+        assert_eq!(
+            rows,
+            vec![
+                vec![String::from("1"), String::from("2"), String::from("3")],
+                vec![String::from("4"), String::from("5"), String::from("6")]
+            ]
+        );
+
+        let query = "insert into t1(a1, a2, a3) values (1, 2, 3);";
+        let parser = Parser::new(query).unwrap();
+        let mut iter = parser.tokens.iter().peekable();
+        let (table_name, attrs, rows) = parser_insert_into_table(&mut iter).unwrap();
+        assert_eq!(table_name, "t1");
+        assert_eq!(attrs, vec![String::from("a1"), String::from("a2"), String::from("a3")]);
+        assert_eq!(
+            rows,
+            vec![vec![String::from("1"), String::from("2"), String::from("3")],]
+        );
+
+        let query = "insert into t1(a1) values (1);";
+        let parser = Parser::new(query).unwrap();
+        let mut iter = parser.tokens.iter().peekable();
+        let (table_name, attrs, rows) = parser_insert_into_table(&mut iter).unwrap();
+        assert_eq!(table_name, "t1");
+        assert_eq!(attrs, vec![String::from("a1")]);
+        assert_eq!(rows, vec![vec![String::from("1")]]);
+    }
+
+    #[test]
+    fn test_insert_into_table_syntax_error() {
+        // values not match attributes
+        let query = "insert into t1(a1, a2, a3) values (1, 2);";
+        let parser = Parser::new(query).unwrap();
+        let mut iter = parser.tokens.iter().peekable();
+        assert!(parser_insert_into_table(&mut iter).is_err());
+
+        let query = "insert into t1(a1, a2, a3) values (1, 2, 3, 4);";
+        let parser = Parser::new(query).unwrap();
+        let mut iter = parser.tokens.iter().peekable();
+        assert!(parser_insert_into_table(&mut iter).is_err());
     }
 
     #[test]
