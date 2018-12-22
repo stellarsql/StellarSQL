@@ -27,7 +27,7 @@ pub struct Table {
 }
 
 #[derive(Debug, Clone)]
-pub struct Row(HashMap<String, String>);
+pub struct Row(pub HashMap<String, String>);
 
 impl Row {
     fn new() -> Row {

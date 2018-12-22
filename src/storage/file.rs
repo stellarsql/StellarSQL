@@ -2,6 +2,7 @@ use crate::component::datatype::DataType;
 use crate::component::field;
 use crate::component::field::Field;
 use crate::component::table::Table;
+use crate::component::table::Row;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
@@ -555,7 +556,72 @@ impl File {
         Ok(())
     }
 
-    // TODO: append_rows(username: &str, db_name: &str, table_name: &str, rows: &Vec<Row>, file_base_path: Option<&str>) -> Result<Vec<u32>, FileError>
+    pub fn append_rows(
+        username: &str,
+        db_name: &str,
+        table_name: &str,
+        rows: &Vec<Row>,
+        file_base_path: Option<&str>,
+    ) -> Result<Vec<u32>, FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+        // perform storage check toward table level
+        match File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)) {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        };
+
+        // load current tables from `tables.json`
+        let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
+        let tables_file = fs::File::open(&tables_json_path)?;
+        let mut tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+
+        // locate target table
+        let idx_target = tables_json
+            .tables
+            .iter()
+            .position(|table_info| &table_info.name == table_name);
+    
+        let table_info_target: &mut TableInfo = match idx_target {
+            Some(idx) => &mut tables_json.tables[idx],
+            None => return Err(FileError::TableNotExists),
+        };
+
+        // create chunk of rows to be inserted
+        let prev_last_rid = table_info_target.last_rid;
+        let mut curr_rid = table_info_target.last_rid;
+        let mut chunk = String::new();
+        for row in rows {
+            curr_rid += 1;
+            let mut raw_row = vec![curr_rid.to_string()];
+            let attrs = table_info_target
+                .attrs_order[1..]
+                .iter()
+                .map(|attr| row.0.get(attr).unwrap().clone())
+                .collect::<Vec<String>>();
+            raw_row.extend_from_slice(&attrs);
+            chunk += &("\n".to_string() + &raw_row.join("\t"));
+        }
+
+        // append chunk to table tsv
+        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+        let mut table_tsv_file = fs::OpenOptions::new()
+            .append(true)
+            .open(table_tsv_path)?;
+        table_tsv_file.write_all(chunk.as_bytes())?;
+
+        // overwrite `tables.json`
+        table_info_target.last_rid = curr_rid;
+        let mut tables_file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(tables_json_path)?;
+        tables_file.write_all(serde_json::to_string_pretty(&tables_json)?.as_bytes())?;
+
+        Ok(((prev_last_rid+1)..curr_rid).collect())
+    }
 
     // TODO: fetch_rows(username: &str, db_name: &str, table_name: &str, row_id_range: &Vec<u32>, file_base_path: Option<&str>) -> Result<Vec<Row>, FileError>
 
@@ -1112,5 +1178,78 @@ mod tests {
         let tables = File::load_tables_meta("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
         assert_eq!(tables.len(), 0);
+    }
+
+    #[test]
+    pub fn test_append_rows() {
+        let file_base_path = "data8";
+        if Path::new(file_base_path).exists() {
+            fs::remove_dir_all(file_base_path).unwrap();
+        }
+        File::create_username("crazyguy", Some(file_base_path)).unwrap();
+        File::create_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
+
+        let mut aff_table = Table::new("Affiliates");
+        aff_table.fields.insert(
+            "AffID".to_string(),
+            Field::new_all("AffID", DataType::Int, true, None, field::Checker::None),
+        );
+        aff_table.fields.insert(
+            "AffName".to_string(),
+            Field::new_all("AffName", DataType::Varchar(40), true, None, field::Checker::None),
+        );
+        aff_table.fields.insert(
+            "AffEmail".to_string(),
+            Field::new_all("AffEmail", DataType::Varchar(50), true, None, field::Checker::None),
+        );
+        aff_table.fields.insert(
+            "AffPhoneNum".to_string(),
+            Field::new_all(
+                "AffPhoneNum",
+                DataType::Varchar(20),
+                false,
+                Some("+886900000000".to_string()),
+                field::Checker::None,
+            ),
+        );
+        aff_table.primary_key.push("AffID".to_string());
+
+        File::create_table("crazyguy", "BookerDB", &aff_table, Some(file_base_path)).unwrap();
+
+        let data = vec![("AffID", "1"), ("AffName", "Tom"), ("AffEmail", "tom@foo.com"), ("AffPhoneNum", "+886900000001")];
+        aff_table.insert_row(data).unwrap();
+
+        File::append_rows("crazyguy", "BookerDB", "Affiliates", &aff_table.rows, Some(file_base_path)).unwrap();
+
+        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+        ))
+        .unwrap()
+        .split('\n')
+        .map(|s| s.to_string())
+        .collect();
+
+        assert_eq!(aff_tsv_content.len(), 2);
+        // assert_eq!(aff_tsv_content[1], "1\t1\t+886900000001\ttom@foo.com\tTom".to_string());
+
+        let data = vec![("AffID", "2"), ("AffName", "Ben"), ("AffEmail", "ben@foo.com"), ("AffPhoneNum", "+886900000002")];
+        aff_table.insert_row(data).unwrap();
+        let data = vec![("AffID", "3"), ("AffName", "Leo"), ("AffEmail", "leo@dee.com"), ("AffPhoneNum", "+886900000003")];
+        aff_table.insert_row(data).unwrap();
+
+        File::append_rows("crazyguy", "BookerDB", "Affiliates", &aff_table.rows[1..].iter().cloned().collect(), Some(file_base_path)).unwrap();
+
+        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+        ))
+        .unwrap()
+        .split('\n')
+        .map(|s| s.to_string())
+        .collect();
+
+        assert_eq!(aff_tsv_content.len(), 4);
+        // assert_eq!(aff_tsv_content[1], "1\t1\t+886900000001\ttom@foo.com\tTom".to_string());
     }
 }
