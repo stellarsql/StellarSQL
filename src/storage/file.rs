@@ -403,11 +403,16 @@ impl File {
         new_table_info
             .attrs_order
             .extend_from_slice(&new_table_info.primary_key);
+        let mut other_attrs: Vec<String> = vec![];
         for (k, _v) in table.fields.iter() {
             if !new_table_info.primary_key.contains(&k) {
-                new_table_info.attrs_order.push(k.clone());
+                other_attrs.push(k.clone());
             }
         }
+        other_attrs.sort();
+        new_table_info
+            .attrs_order
+            .extend_from_slice(&other_attrs);
 
         // create corresponding tsv for the table, with the title line
         let table_tsv_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_info.path_tsv);
@@ -1231,7 +1236,7 @@ mod tests {
         .collect();
 
         assert_eq!(aff_tsv_content.len(), 2);
-        // assert_eq!(aff_tsv_content[1], "1\t1\t+886900000001\ttom@foo.com\tTom".to_string());
+        assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
 
         let data = vec![("AffID", "2"), ("AffName", "Ben"), ("AffEmail", "ben@foo.com"), ("AffPhoneNum", "+886900000002")];
         aff_table.insert_row(data).unwrap();
@@ -1250,6 +1255,8 @@ mod tests {
         .collect();
 
         assert_eq!(aff_tsv_content.len(), 4);
-        // assert_eq!(aff_tsv_content[1], "1\t1\t+886900000001\ttom@foo.com\tTom".to_string());
+        assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+        assert_eq!(aff_tsv_content[2], "2\t2\tben@foo.com\tBen\t+886900000002".to_string());
+        assert_eq!(aff_tsv_content[3], "3\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
     }
 }
