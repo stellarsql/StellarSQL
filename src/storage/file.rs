@@ -179,10 +179,7 @@ impl File {
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward base level
-        match File::storage_hierarchy_check(base_path, None, None, None) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        File::storage_hierarchy_check(base_path, None, None, None).map_err(|e| e)?;
 
         // read and parse `usernames.json`
         let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
@@ -203,10 +200,7 @@ impl File {
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward base level
-        match File::storage_hierarchy_check(base_path, None, None, None) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        File::storage_hierarchy_check(base_path, None, None, None).map_err(|e| e)?;
 
         // read and parse `usernames.json`
         let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
@@ -245,10 +239,7 @@ impl File {
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward username level
-        match File::storage_hierarchy_check(base_path, Some(username), None, None) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        File::storage_hierarchy_check(base_path, Some(username), None, None).map_err(|e| e)?;
 
         // load current dbs from `dbs.json`
         let dbs_json_path = format!("{}/{}/{}", base_path, username, "dbs.json");
@@ -298,10 +289,7 @@ impl File {
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward username level
-        match File::storage_hierarchy_check(base_path, Some(username), None, None) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        File::storage_hierarchy_check(base_path, Some(username), None, None).map_err(|e| e)?;
 
         // read and parse `dbs.json`
         let dbs_json_path = format!("{}/{}/{}", base_path, username, "dbs.json");
@@ -322,10 +310,7 @@ impl File {
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward username level
-        match File::storage_hierarchy_check(base_path, Some(username), None, None) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        File::storage_hierarchy_check(base_path, Some(username), None, None).map_err(|e| e)?;
 
         // load current dbs from `dbs.json`
         let dbs_json_path = format!("{}/{}/{}", base_path, username, "dbs.json");
@@ -366,10 +351,7 @@ impl File {
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward db level
-        match File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -444,10 +426,7 @@ impl File {
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward db level
-        match File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -524,10 +503,7 @@ impl File {
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward table level
-        match File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -572,10 +548,7 @@ impl File {
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward table level
-        match File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
