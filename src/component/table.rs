@@ -12,6 +12,7 @@ pub struct Table {
     pub primary_key: Vec<String>,
     pub foreign_key: Vec<String>,
     pub reference_table: Option<String>,
+    pub reference_attr: Option<String>,
 
     /* value */
     pub rows: Vec<Row>,
@@ -64,6 +65,8 @@ impl Table {
             primary_key: vec![],
             foreign_key: vec![],
             reference_table: None,
+            reference_attr: None,
+
             page: 0,
             cursors: (0, 0),
         }
