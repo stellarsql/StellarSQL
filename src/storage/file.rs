@@ -454,6 +454,33 @@ impl File {
         Ok(tables_json.tables)
     }
 
+    /// load a particular table meta data
+    pub fn load_table_meta(
+        username: &str,
+        db_name: &str,
+        table_name: &str,
+        file_base_path: Option<&str>,
+    ) -> Result<TableInfo, FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+        // perform storage check toward db level
+        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
+
+        // load current tables from `tables.json`
+        let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
+        let tables_file = fs::File::open(&tables_json_path)?;
+        let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+
+        // return the vector of table info
+        for table in tables_json.tables {
+            if &table.name == table_name {
+                return Ok(table);
+            }
+        }
+        Err(FileError::TableNotExists)
+    }
+
     pub fn drop_table(
         username: &str,
         db_name: &str,
@@ -968,6 +995,10 @@ mod tests {
                 attrs: HashMap::new(),
             },
         ];
+
+        // load_table_meta
+        assert!(File::load_table_meta("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).is_ok());
+        assert!(File::load_table_meta("crazyguy", "BookerDB", "none_table", Some(file_base_path)).is_err());
 
         let tables = File::load_tables("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
