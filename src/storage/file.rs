@@ -1,13 +1,13 @@
 use crate::component::datatype::DataType;
 use crate::component::field;
 use crate::component::field::Field;
-use crate::component::table::Table;
 use crate::component::table::Row;
+use crate::component::table::Table;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
-use std::io::Write;
+use std::io::{Write, BufReader, BufRead};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -33,6 +33,7 @@ pub enum FileError {
     TableNotExists,
     TableTsvNotExists,
     JsonParse,
+    RangeContainsDeletedRecord,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -73,7 +74,6 @@ pub struct TableMeta {
     path_tsv: String,
     path_bin: String,
     attrs_order: Vec<String>,
-    last_rid: u32,
 }
 
 impl From<io::Error> for FileError {
@@ -108,6 +108,7 @@ impl fmt::Display for FileError {
             FileError::TableNotExists => write!(f, "Table not exists. Please create table first."),
             FileError::TableTsvNotExists => write!(f, "Table exists but correspoding tsv file is lost."),
             FileError::JsonParse => write!(f, "JSON parsing error."),
+            FileError::RangeContainsDeletedRecord => write!(f, "The range of rows to fetch contains deleted records."),
         }
     }
 }
@@ -359,14 +360,14 @@ impl File {
         let mut tables_json: TablesJson = serde_json::from_reader(tables_file)?;
 
         // check if the table exists
-        for table_info in &tables_json.tables {
-            if table_info.name == table.name {
+        for table_meta in &tables_json.tables {
+            if table_meta.name == table.name {
                 return Err(FileError::TableExists);
             }
         }
 
         // create new table json instance
-        let mut new_table_info = TableMeta {
+        let mut new_table_meta = TableMeta {
             name: table.name.to_string(),
             path_tsv: format!("{}.tsv", table.name),
             path_bin: format!("{}.bin", table.name),
@@ -376,38 +377,35 @@ impl File {
             reference_attr: table.reference_attr.clone(),
             attrs_order: vec![],
             attrs: table.fields.clone(),
-            last_rid: 0,
         };
 
         // determine storing order of attrs in .tsv and .bin
-        // `__rid__` and primary key attrs are always at first
-        new_table_info.attrs_order = vec!["__rid__".to_string()];
-        new_table_info
+        // primary key attrs are always at first
+        new_table_meta.attrs_order = vec![];
+        new_table_meta
             .attrs_order
-            .extend_from_slice(&new_table_info.primary_key);
+            .extend_from_slice(&new_table_meta.primary_key);
         let mut other_attrs: Vec<String> = vec![];
         for (k, _v) in table.fields.iter() {
-            if !new_table_info.primary_key.contains(&k) {
+            if !new_table_meta.primary_key.contains(&k) {
                 other_attrs.push(k.clone());
             }
         }
         other_attrs.sort();
-        new_table_info
-            .attrs_order
-            .extend_from_slice(&other_attrs);
+        new_table_meta.attrs_order.extend_from_slice(&other_attrs);
 
         // create corresponding tsv for the table, with the title line
-        let table_tsv_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_info.path_tsv);
+        let table_tsv_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_tsv);
         let mut table_tsv_file = fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(true)
             .open(table_tsv_path)?;
-        table_tsv_file.write_all(new_table_info.attrs_order.join("\t").as_bytes())?;
+        table_tsv_file.write_all(new_table_meta.attrs_order.join("\t").as_bytes())?;
 
         // insert the new table record into `tables.json`
-        tables_json.tables.push(new_table_info);
+        tables_json.tables.push(new_table_meta);
 
         // save `tables.json`
         let mut tables_file = fs::OpenOptions::new()
@@ -514,7 +512,7 @@ impl File {
         let idx_to_remove = tables_json
             .tables
             .iter()
-            .position(|table_info| &table_info.name == table_name);
+            .position(|table_meta| &table_meta.name == table_name);
         match idx_to_remove {
             Some(idx) => tables_json.tables.remove(idx),
             None => return Err(FileError::TableNotExists),
@@ -543,7 +541,7 @@ impl File {
         table_name: &str,
         rows: &Vec<Row>,
         file_base_path: Option<&str>,
-    ) -> Result<Vec<u32>, FileError> {
+    ) -> Result<(), FileError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
@@ -559,22 +557,19 @@ impl File {
         let idx_target = tables_json
             .tables
             .iter()
-            .position(|table_info| &table_info.name == table_name);
-    
-        let table_info_target: &mut TableInfo = match idx_target {
+            .position(|table_meta| &table_meta.name == table_name);
+
+        let table_meta_target: &mut TableMeta = match idx_target {
             Some(idx) => &mut tables_json.tables[idx],
             None => return Err(FileError::TableNotExists),
         };
 
         // create chunk of rows to be inserted
-        let prev_last_rid = table_info_target.last_rid;
-        let mut curr_rid = table_info_target.last_rid;
         let mut chunk = String::new();
         for row in rows {
-            curr_rid += 1;
-            let mut raw_row = vec![curr_rid.to_string()];
-            let attrs = table_info_target
-                .attrs_order[1..]
+            let mut raw_row = vec![];
+            let attrs = table_meta_target
+                .attrs_order
                 .iter()
                 .map(|attr| row.0.get(attr).unwrap().clone())
                 .collect::<Vec<String>>();
@@ -584,13 +579,10 @@ impl File {
 
         // append chunk to table tsv
         let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let mut table_tsv_file = fs::OpenOptions::new()
-            .append(true)
-            .open(table_tsv_path)?;
+        let mut table_tsv_file = fs::OpenOptions::new().append(true).open(table_tsv_path)?;
         table_tsv_file.write_all(chunk.as_bytes())?;
 
         // overwrite `tables.json`
-        table_info_target.last_rid = curr_rid;
         let mut tables_file = fs::OpenOptions::new()
             .write(true)
             .create(true)
@@ -598,10 +590,62 @@ impl File {
             .open(tables_json_path)?;
         tables_file.write_all(serde_json::to_string_pretty(&tables_json)?.as_bytes())?;
 
-        Ok(((prev_last_rid+1)..curr_rid).collect())
+        Ok(())
     }
 
-    // TODO: fetch_rows(username: &str, db_name: &str, table_name: &str, row_id_range: &Vec<u32>, file_base_path: Option<&str>) -> Result<Vec<Row>, FileError>
+    // pub fn fetch_rows(
+    //     username: &str,
+    //     db_name: &str,
+    //     table_name: &str,
+    //     row_range: &Vec<u32>,
+    //     file_base_path: Option<&str>,
+    // ) -> Result<Vec<Row>, FileError> {
+    //     // determine file base path
+    //     let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+    //     // perform storage check toward table level
+    //     File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
+
+    //     // load current tables from `tables.json`
+    //     let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
+    //     let tables_file = fs::File::open(&tables_json_path)?;
+    //     let mut tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+
+    //     // locate target table
+    //     let idx_target = tables_json
+    //         .tables
+    //         .iter()
+    //         .position(|table_meta| &table_meta.name == table_name);
+
+    //     let table_meta_target: &TableMeta = match idx_target {
+    //         Some(idx) => &tables_json.tables[idx],
+    //         None => return Err(FileError::TableNotExists),
+    //     };
+
+    //     // load rows from table
+    //     let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+    //     let table_tsv_file = fs::File::open(&table_tsv_path)?;
+    //     let buffered = BufReader::new(table_tsv_file);
+
+    //     let mut rows:Vec<Row> = vec![];
+    //     let mut curr_idx = row_range[0];
+    //     for line in buffered.lines().skip(row_range[0] as usize) {
+    //         let raw_line = line.replace('\t',"").split('\t');
+    //         if raw_line[0] == '0' {
+    //             return Err(FileError::RangeContainsDeletedRecord);
+    //         }
+    //         for i in [1..raw_line.len()] {
+    //             new_row.0.insert(table_meta_target.attrs_order[i], raw_line[i])
+    //         }
+    //         let mut new_row = Row::new();
+    //         let attrs = table_meta_target
+    //             .attrs_order
+    //             .iter()
+    //             .map(|attr| row.0.get(attr).unwrap().clone())
+    //             .collect::<Vec<String>>();
+    //         curr_idx += 1;
+    //     }
+    // }
 
     // TODO: delete_rows(username: &str, db_name: &str, table_name: &str, row_id_range: &Vec<u32>, file_base_path: Option<&str>) -> Result<(), FileError>
 
@@ -695,7 +739,7 @@ impl File {
         if !tables_json
             .tables
             .iter()
-            .map(|table_info| table_info.name.clone())
+            .map(|table_meta| table_meta.name.clone())
             .collect::<Vec<String>>()
             .contains(&table_name.unwrap().to_string())
         {
@@ -1047,7 +1091,6 @@ mod tests {
                 foreign_key: vec![],
                 reference_table: None,
                 reference_attr: None,
-                last_rid: 0,
                 // ignore attrs checking
                 attrs_order: vec![],
                 attrs: HashMap::new(),
@@ -1060,7 +1103,6 @@ mod tests {
                 foreign_key: vec![],
                 reference_table: None,
                 reference_attr: None,
-                last_rid: 0,
                 // ignore attrs checking
                 attrs_order: vec![],
                 attrs: HashMap::new(),
@@ -1083,7 +1125,6 @@ mod tests {
             assert_eq!(tables[i].foreign_key, ideal_tables[i].foreign_key);
             assert_eq!(tables[i].reference_table, ideal_tables[i].reference_table);
             // assert_eq!(tables[i].reference_attr, ideal_tables[i].reference_attr);
-            assert_eq!(tables[i].last_rid, ideal_tables[i].last_rid);
         }
 
         assert!(Path::new(&format!(
@@ -1106,9 +1147,8 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
 
-        assert_eq!(aff_tsv_content[0], "__rid__".to_string());
-        assert_eq!(aff_tsv_content[1], "AffID".to_string());
-        assert_eq!(aff_tsv_content.len(), 5);
+        assert_eq!(aff_tsv_content[0], "AffID".to_string());
+        assert_eq!(aff_tsv_content.len(), 4);
 
         match File::create_table("happyguy", "BookerDB", &htl_table, Some(file_base_path)) {
             Ok(_) => {}
@@ -1194,10 +1234,22 @@ mod tests {
 
         File::create_table("crazyguy", "BookerDB", &aff_table, Some(file_base_path)).unwrap();
 
-        let data = vec![("AffID", "1"), ("AffName", "Tom"), ("AffEmail", "tom@foo.com"), ("AffPhoneNum", "+886900000001")];
+        let data = vec![
+            ("AffID", "1"),
+            ("AffName", "Tom"),
+            ("AffEmail", "tom@foo.com"),
+            ("AffPhoneNum", "+886900000001"),
+        ];
         aff_table.insert_row(data).unwrap();
 
-        File::append_rows("crazyguy", "BookerDB", "Affiliates", &aff_table.rows, Some(file_base_path)).unwrap();
+        File::append_rows(
+            "crazyguy",
+            "BookerDB",
+            "Affiliates",
+            &aff_table.rows,
+            Some(file_base_path),
+        )
+        .unwrap();
 
         let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
             "{}/{}/{}/{}",
@@ -1209,14 +1261,31 @@ mod tests {
         .collect();
 
         assert_eq!(aff_tsv_content.len(), 2);
-        assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+        assert_eq!(aff_tsv_content[1], "1\ttom@foo.com\tTom\t+886900000001".to_string());
 
-        let data = vec![("AffID", "2"), ("AffName", "Ben"), ("AffEmail", "ben@foo.com"), ("AffPhoneNum", "+886900000002")];
+        let data = vec![
+            ("AffID", "2"),
+            ("AffName", "Ben"),
+            ("AffEmail", "ben@foo.com"),
+            ("AffPhoneNum", "+886900000002"),
+        ];
         aff_table.insert_row(data).unwrap();
-        let data = vec![("AffID", "3"), ("AffName", "Leo"), ("AffEmail", "leo@dee.com"), ("AffPhoneNum", "+886900000003")];
+        let data = vec![
+            ("AffID", "3"),
+            ("AffName", "Leo"),
+            ("AffEmail", "leo@dee.com"),
+            ("AffPhoneNum", "+886900000003"),
+        ];
         aff_table.insert_row(data).unwrap();
 
-        File::append_rows("crazyguy", "BookerDB", "Affiliates", &aff_table.rows[1..].iter().cloned().collect(), Some(file_base_path)).unwrap();
+        File::append_rows(
+            "crazyguy",
+            "BookerDB",
+            "Affiliates",
+            &aff_table.rows[1..].iter().cloned().collect(),
+            Some(file_base_path),
+        )
+        .unwrap();
 
         let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
             "{}/{}/{}/{}",
@@ -1228,8 +1297,8 @@ mod tests {
         .collect();
 
         assert_eq!(aff_tsv_content.len(), 4);
-        assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
-        assert_eq!(aff_tsv_content[2], "2\t2\tben@foo.com\tBen\t+886900000002".to_string());
-        assert_eq!(aff_tsv_content[3], "3\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+        assert_eq!(aff_tsv_content[1], "1\ttom@foo.com\tTom\t+886900000001".to_string());
+        assert_eq!(aff_tsv_content[2], "2\tben@foo.com\tBen\t+886900000002".to_string());
+        assert_eq!(aff_tsv_content[3], "3\tleo@dee.com\tLeo\t+886900000003".to_string());
     }
 }
