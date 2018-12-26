@@ -22,7 +22,7 @@ pub enum ParserError {
     CauseByLexer(LexerError),
     TokenLengthZero,
     SyntaxError,
-    SemanticError(SQLError),
+    SQLError(SQLError),
 }
 
 impl fmt::Display for ParserError {
@@ -31,7 +31,7 @@ impl fmt::Display for ParserError {
             ParserError::CauseByLexer(ref e) => write!(f, "error caused by lexer: {}", e),
             ParserError::TokenLengthZero => write!(f, "error caused by a zero length tokens"),
             ParserError::SyntaxError => write!(f, "error caused by wrong syntax"),
-            ParserError::SemanticError(ref e) => write!(f, "error caused by semantic: {}", e),
+            ParserError::SQLError(ref e) => write!(f, "error caused by semantic: {}", e),
         }
     }
 }
@@ -49,7 +49,7 @@ impl Parser {
             Err(e) => Err(ParserError::CauseByLexer(e)),
         }
     }
-    pub fn parse(&self, db_name: Option<String>) -> Result<SQL, ParserError> {
+    pub fn parse(&self, sql: &mut SQL) -> Result<(), ParserError> {
         println!("Parser parsing started...");
 
         let mut iter = self.tokens.iter().peekable();
@@ -65,9 +65,10 @@ impl Parser {
                         return Err(ParserError::SyntaxError);
                     }
 
-                    let sql = SQL::create_database(&db_name_sym.name).map_err(|e| ParserError::SemanticError(e))?;
+                    sql.create_database(&db_name_sym.name)
+                        .map_err(|e| ParserError::SQLError(e))?;
 
-                    return Ok(sql);
+                    return Ok(());
                 }
                 Token::CreateTable => {
                     println!("-> create table");
@@ -176,20 +177,17 @@ impl Parser {
                         println!("   - insert new field into table");
                     }
 
-                    let db_name = db_name.ok_or(ParserError::SyntaxError)?;
+                    sql.create_table(&table).map_err(|e| ParserError::SQLError(e))?;
 
-                    let sql = SQL::create_table(&db_name, &table).map_err(|e| ParserError::SemanticError(e))?;
-
-                    return Ok(sql);
+                    return Ok(());
                 }
                 Token::InsertInto => {
                     println!("-> insert into table");
                     let (table_name, attrs, rows) = parser_insert_into_table(&mut iter)?;
-                    let db_name = db_name.ok_or(ParserError::SyntaxError)?;
-                    let sql = SQL::insert_into_table(&db_name, &table_name, attrs, rows)
-                        .map_err(|e| ParserError::SemanticError(e))?;
+                    sql.insert_into_table(&table_name, attrs, rows)
+                        .map_err(|e| ParserError::SQLError(e))?;
 
-                    Ok(sql)
+                    Ok(())
                 }
                 _ => {
                     return Err(ParserError::SyntaxError);
@@ -280,17 +278,30 @@ fn parser_insert_into_table(
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_parser_parse_database() {
-        let query = "create database db1;";
-        let sql = Parser::new(query).unwrap().parse(None).unwrap();
-        assert_eq!(sql.database.name, "db1");
+    fn fake_sql() -> SQL {
+        let mut sql = SQL::new("Jenny").unwrap();
+        sql.create_database("db1").unwrap();
+        sql
     }
 
     #[test]
-    fn test_parser_parse_table() {
+    fn test_parser_create_database() {
+        let mut sql = fake_sql();
+
+        let query = "create database db2;";
+        let parser = Parser::new(query).unwrap();
+        parser.parse(&mut sql).unwrap();
+        assert_eq!(sql.database.name, "db2");
+    }
+
+    #[test]
+    fn test_parser_create_table() {
+        let mut sql = fake_sql();
+
         let query = "create table t1 (a1 int, b1 char(7), c1 double);";
-        let sql = Parser::new(query).unwrap().parse(Some("db1".to_string())).unwrap();
+        let parser = Parser::new(query).unwrap();
+        parser.parse(&mut sql).unwrap();
+
         let db = sql.database.clone();
         let table = db.tables.get("t1").unwrap();
         assert!(table.fields.contains_key("a1"));
@@ -298,7 +309,9 @@ mod tests {
         assert!(table.fields.contains_key("c1"));
 
         let query = "create table t1 (a1 int not null default 5, b1 char(7) not null, c1 double default 1.2);";
-        let sql = Parser::new(query).unwrap().parse(Some("db1".to_string())).unwrap();
+        let parser = Parser::new(query).unwrap();
+        parser.parse(&mut sql).unwrap();
+
         let db = sql.database.clone();
         let table = db.tables.get("t1").unwrap();
         let a1 = table.fields.get("a1").unwrap();
@@ -358,6 +371,33 @@ mod tests {
         let parser = Parser::new(query).unwrap();
         let mut iter = parser.tokens.iter().peekable();
         assert!(parser_insert_into_table(&mut iter).is_err());
+    }
+
+    #[test]
+    fn test_parser_insert_into_table() {
+        let mut sql = fake_sql();
+
+        let query = "create table t1 (a1 int, b1 char(7), c1 double);";
+        let parser = Parser::new(query).unwrap();
+        parser.parse(&mut sql).unwrap();
+
+        let query = "insert into t1(a1, b1, c1) values (33, 'abc', 3.43);";
+        let parser = Parser::new(query).unwrap();
+        assert!(parser.parse(&mut sql).is_ok());
+    }
+
+    #[test]
+    fn test_parser_insert_into_table_error() {
+        let mut sql = fake_sql();
+
+        let query = "create table t1 (a1 int, b1 char(7), c1 double);";
+        let parser = Parser::new(query).unwrap();
+        parser.parse(&mut sql).unwrap();
+
+        // miss the attribute, but it has no default value
+        let query = "insert into t1(a1, c1) values (33,  3.43);";
+        let parser = Parser::new(query).unwrap();
+        assert!(parser.parse(&mut sql).is_err());
     }
 
     #[test]
