@@ -15,7 +15,7 @@ pub struct File {
 // Ideally, File is a stateless struct
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FileError {
     Io,
     BaseDirNotExists,
@@ -58,20 +58,20 @@ struct DbInfo {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TablesJson {
-    tables: Vec<TableInfo>,
+    tables: Vec<TableMeta>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct TableInfo {
-    name: String,
+pub struct TableMeta {
+    pub name: String,
+    pub primary_key: Vec<String>,
+    pub foreign_key: Vec<String>,
+    pub reference_table: Option<String>,
+    pub reference_attr: Option<String>,
+    pub attrs: HashMap<String, Field>,
     path_tsv: String,
     path_bin: String,
-    primary_key: Vec<String>,
-    foreign_key: Vec<String>,
-    reference_table: Option<String>,
-    reference_attr: Option<String>,
     attrs_order: Vec<String>,
-    attrs: HashMap<String, Field>,
     last_rid: u32,
 }
 
@@ -383,7 +383,7 @@ impl File {
         }
 
         // create new table json instance
-        let mut new_table_info = TableInfo {
+        let mut new_table_info = TableMeta {
             name: table.name.to_string(),
             path_tsv: format!("{}.tsv", table.name),
             path_bin: format!("{}.bin", table.name),
@@ -431,11 +431,38 @@ impl File {
         Ok(())
     }
 
-    pub fn load_tables(
+    /// get the list of tables in a database
+    /// for `show tables`
+    pub fn get_tables(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<Vec<String>, FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+        // perform storage check toward db level
+        match File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None) {
+            Ok(_) => (),
+            Err(e) => return Err(e),
+        };
+
+        // load current tables from `tables.json`
+        let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
+        let tables_file = fs::File::open(&tables_json_path)?;
+        let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+        let tables = tables_json
+            .tables
+            .iter()
+            .map(|table| table.name.clone())
+            .collect::<Vec<String>>();
+
+        // return the vector of table name
+        Ok(tables)
+    }
+
+    /// load metadata of all tables from the database
+    pub fn load_tables_meta(
         username: &str,
         db_name: &str,
         file_base_path: Option<&str>,
-    ) -> Result<Vec<TableInfo>, FileError> {
+    ) -> Result<Vec<TableMeta>, FileError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
@@ -460,7 +487,7 @@ impl File {
         db_name: &str,
         table_name: &str,
         file_base_path: Option<&str>,
-    ) -> Result<TableInfo, FileError> {
+    ) -> Result<TableMeta, FileError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
@@ -968,7 +995,7 @@ mod tests {
         File::create_table("crazyguy", "BookerDB", &htl_table, Some(file_base_path)).unwrap();
 
         let ideal_tables = vec![
-            TableInfo {
+            TableMeta {
                 name: "Affiliates".to_string(),
                 path_tsv: "Affiliates.tsv".to_string(),
                 path_bin: "Affiliates.bin".to_string(),
@@ -981,7 +1008,7 @@ mod tests {
                 attrs_order: vec![],
                 attrs: HashMap::new(),
             },
-            TableInfo {
+            TableMeta {
                 name: "Hotels".to_string(),
                 path_tsv: "Hotels.tsv".to_string(),
                 path_bin: "Hotels.bin".to_string(),
@@ -1000,7 +1027,7 @@ mod tests {
         assert!(File::load_table_meta("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).is_ok());
         assert!(File::load_table_meta("crazyguy", "BookerDB", "none_table", Some(file_base_path)).is_err());
 
-        let tables = File::load_tables("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
+        let tables = File::load_tables_meta("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
         assert_eq!(tables.len(), 2);
 
@@ -1065,7 +1092,7 @@ mod tests {
         ))
         .exists());
 
-        let tables = File::load_tables("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
+        let tables = File::load_tables_meta("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
         assert_eq!(tables.len(), 1);
 
@@ -1082,7 +1109,7 @@ mod tests {
         ))
         .exists());
 
-        let tables = File::load_tables("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
+        let tables = File::load_tables_meta("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
         assert_eq!(tables.len(), 0);
     }
