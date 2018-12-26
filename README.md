@@ -31,8 +31,25 @@ cargo build
 
 ## Test
 
+## Run all tests
+
 ```bash
 cargo test
+```
+
+## Debug a test
+
+Add the line at the beginning of the test function.
+
+```rust
+// init the logger for the test
+env_logger::init();
+```
+
+Then run the command to see the debug information:
+
+```sh
+RUST_LOG=debug cargo test -- --nocapture {test_name}
 ```
 
 ## Run

@@ -6,6 +6,8 @@ extern crate dotenv_codegen;
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate log;
 
 mod component;
 mod connection;
@@ -19,11 +21,15 @@ use tokio::io::write_all;
 use crate::connection::message;
 use crate::connection::request::Request;
 use crate::connection::response::Response;
+use env_logger;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 
 fn main() {
-    println!("Hello, StellarSQL!");
+    info!("Hello, StellarSQL!");
+
+    // start logger
+    env_logger::init();
 
     // Parse arguments
     let yml = load_yaml!("../cli.yml");
@@ -47,7 +53,7 @@ fn main() {
         .incoming()
         .for_each(move |socket| {
             let addr = socket.peer_addr().unwrap();
-            println!("New Connection: {}", addr);
+            info!("New Connection: {}", addr);
 
             // Spawn a task to process the connection
             process(socket);
@@ -55,10 +61,10 @@ fn main() {
             Ok(())
         })
         .map_err(|err| {
-            println!("accept error = {:?}", err);
+            error!("accept error = {:?}", err);
         });
 
-    println!("StellarSQL running on {} port", port);
+    info!("StellarSQL running on {} port", port);
     tokio::run(server);
 }
 

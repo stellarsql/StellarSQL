@@ -39,7 +39,7 @@ impl Scanner {
         }
     }
     pub fn scan_tokens(&mut self) -> Result<Vec<symbol::Symbol>, LexerError> {
-        println!("Starting scanning message:\n`{}`", self.message);
+        debug!("Starting scanning message:\n`{}`", self.message);
         let mut chars = self.message.chars();
 
         loop {
@@ -52,7 +52,7 @@ impl Scanner {
                             ' ' | '\t' | '\r' | '\n' | '(' | ')' | ',' | ';' => {
                                 if self.pos.cursor_l != self.pos.cursor_r {
                                     let word = self.message.get(self.pos.cursor_l..self.pos.cursor_r).unwrap();
-                                    println!("encounter `{}`, last word is `{}`", x, word);
+                                    debug!("encounter `{}`, last word is `{}`", x, word);
 
                                     let mut is_multi_keyword = false;
 
@@ -62,10 +62,10 @@ impl Scanner {
                                         match symbol::check_multi_keywords_front(word) {
                                             // parts<Vec[u32]> for how many parts in this possible keyword
                                             Some(parts) => {
-                                                println!("The word `{}` might be a multikeyword", word);
+                                                debug!("The word `{}` might be a multikeyword", word);
 
                                                 for keyword_total_parts in parts {
-                                                    println!("Assume this keyword has {} parts", keyword_total_parts);
+                                                    debug!("Assume this keyword has {} parts", keyword_total_parts);
 
                                                     // copy remaining chars for testing
                                                     let mut test_chars = chars.as_str().chars();
@@ -121,11 +121,11 @@ impl Scanner {
                                                         step_counter += 1;
                                                     }
 
-                                                    println!("Checking `{}` ...", test_str);
+                                                    debug!("Checking `{}` ...", test_str);
                                                     match symbol::SYMBOLS.get(test_str.as_str()) {
                                                         // a multikeyword
                                                         Some(token) => {
-                                                            println!("Found keyword `{}`", test_str);
+                                                            debug!("Found keyword `{}`", test_str);
                                                             self.tokens.push(token.clone());
 
                                                             // shift the right cursor to the right of multikeyword
@@ -138,7 +138,7 @@ impl Scanner {
                                                             is_multi_keyword = true;
                                                             break; // parts
                                                         }
-                                                        None => println!("`{}` not a keyword", test_str),
+                                                        None => debug!("`{}` not a keyword", test_str),
                                                     }
                                                 }
                                             }
@@ -206,6 +206,8 @@ fn is_delimiter(ch: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use env_logger;
+
     #[test]
     pub fn test_scan_tokens() {
         let message = "select customername, contactname, address from customers where address is null;";
@@ -384,7 +386,7 @@ mod tests {
         let message = "create table x1;";
         let mut s = Scanner::new(message);
         let tokens = s.scan_tokens().unwrap();
-        println!("{:?}", tokens);
+        debug!("{:?}", tokens);
         let mut iter = (&tokens).iter();
         let x = iter.next().unwrap();
         assert_eq!(

@@ -50,7 +50,7 @@ impl Parser {
         }
     }
     pub fn parse(&self, sql: &mut SQL) -> Result<(), ParserError> {
-        println!("Parser parsing started...");
+        debug!("Parser parsing started...");
 
         let mut iter = self.tokens.iter().peekable();
 
@@ -71,7 +71,7 @@ impl Parser {
                     return Ok(());
                 }
                 Token::CreateTable => {
-                    println!("-> create table");
+                    debug!("-> create table");
                     let _ = iter.next();
 
                     let table_name_sym = iter.next().ok_or(ParserError::SyntaxError)?;
@@ -81,7 +81,7 @@ impl Parser {
                     }
 
                     let table_name = table_name_sym.name.clone();
-                    println!("   - table name: {}", table_name);
+                    debug!("   - table name: {}", table_name);
 
                     if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::ParentLeft {
                         return Err(ParserError::SyntaxError);
@@ -90,7 +90,7 @@ impl Parser {
                     // create table.
                     let mut table = Table::new(&table_name);
                     loop {
-                        println!("   -- new field:");
+                        debug!("   -- new field:");
 
                         let mut field;
 
@@ -99,11 +99,11 @@ impl Parser {
                             Some(s) if s.group == Group::Identifier => {
                                 // 1. column
                                 let var_name = iter.next().ok_or(ParserError::SyntaxError)?.name.clone();
-                                println!("   --- field name: {}", var_name);
+                                debug!("   --- field name: {}", var_name);
 
                                 // 2. datatype
                                 let var_type_sym = iter.next().ok_or(ParserError::SyntaxError)?;
-                                println!("   --- field type: {}", var_type_sym.name);
+                                debug!("   --- field type: {}", var_type_sym.name);
 
                                 // 2.1 case: varchar, char
                                 if var_type_sym.token == Token::Varchar || var_type_sym.token == Token::Char {
@@ -114,7 +114,7 @@ impl Parser {
                                     let varchar_len_str = iter.next().ok_or(ParserError::SyntaxError)?.name.clone();
                                     let varchar_len =
                                         varchar_len_str.parse::<u8>().map_err(|_| ParserError::SyntaxError)?;
-                                    println!("   --- field type length: {}", varchar_len);
+                                    debug!("   --- field type length: {}", varchar_len);
 
                                     let datatype = DataType::get(&var_type_sym.name, Some(varchar_len))
                                         .ok_or(ParserError::SyntaxError)?;
@@ -134,7 +134,7 @@ impl Parser {
                                     match iter.peek() {
                                         Some(s) if s.token == Token::Comma => {
                                             iter.next();
-                                            println!("   go next field");
+                                            debug!("   go next field");
                                             break;
                                         }
                                         Some(s) if s.token == Token::NotNull => {
@@ -166,7 +166,7 @@ impl Parser {
 
                             // finish table block
                             Some(s) if s.token == Token::ParentRight => {
-                                println!("   - fields setting done.");
+                                debug!("   - fields setting done.");
                                 break;
                             }
 
@@ -174,7 +174,7 @@ impl Parser {
                         }
 
                         table.insert_new_field(field);
-                        println!("   - insert new field into table");
+                        debug!("   - insert new field into table");
                     }
 
                     sql.create_table(&table).map_err(|e| ParserError::SQLError(e))?;
@@ -182,7 +182,7 @@ impl Parser {
                     return Ok(());
                 }
                 Token::InsertInto => {
-                    println!("-> insert into table");
+                    debug!("-> insert into table");
                     let (table_name, attrs, rows) = parser_insert_into_table(&mut iter)?;
                     sql.insert_into_table(&table_name, attrs, rows)
                         .map_err(|e| ParserError::SQLError(e))?;
@@ -212,7 +212,7 @@ fn parser_insert_into_table(
     }
 
     let table_name = table_name_sym.name.clone();
-    println!("   - table name: {}", table_name);
+    debug!("   - table name: {}", table_name);
 
     if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::ParentLeft {
         return Err(ParserError::SyntaxError);
@@ -233,7 +233,7 @@ fn parser_insert_into_table(
             Some(_) | None => return Err(ParserError::SyntaxError),
         }
     }
-    println!("   -- attributes: {:?}", attrs);
+    debug!("   -- attributes: {:?}", attrs);
 
     if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::Values {
         return Err(ParserError::SyntaxError);
@@ -262,7 +262,7 @@ fn parser_insert_into_table(
                         }
                     }
                 }
-                println!("   -- row: {:?}", row);
+                debug!("   -- row: {:?}", row);
                 rows.push(row);
             }
             Some(s) if s.token == Token::Comma => continue,
@@ -277,6 +277,7 @@ fn parser_insert_into_table(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use env_logger;
 
     fn fake_sql() -> SQL {
         let mut sql = SQL::new("Jenny").unwrap();
