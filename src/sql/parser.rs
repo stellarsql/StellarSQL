@@ -77,9 +77,7 @@ impl Parser {
                     let table_name = table_name_sym.name.clone();
                     debug!("   - table name: {}", table_name);
 
-                    if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::ParentLeft {
-                        return Err(ParserError::SyntaxError);
-                    };
+                    assert_token(iter.next(), Token::ParentLeft)?;
 
                     // create table.
                     let mut table = Table::new(&table_name);
@@ -101,9 +99,7 @@ impl Parser {
 
                                 // 2.1 case: varchar, char
                                 if var_type_sym.token == Token::Varchar || var_type_sym.token == Token::Char {
-                                    if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::ParentLeft {
-                                        return Err(ParserError::SyntaxError);
-                                    };
+                                    assert_token(iter.next(), Token::ParentLeft)?;
 
                                     let varchar_len_str = iter.next().ok_or(ParserError::SyntaxError)?.name.clone();
                                     let varchar_len =
@@ -114,9 +110,8 @@ impl Parser {
                                         .ok_or(ParserError::SyntaxError)?;
                                     field = Field::new(&var_name, datatype);
 
-                                    if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::ParentRight {
-                                        return Err(ParserError::SyntaxError);
-                                    };
+                                    assert_token(iter.next(), Token::ParentRight)?;
+
                                 // 2.2 case: other type
                                 } else {
                                     let datatype =
@@ -214,9 +209,7 @@ fn parser_insert_into_table(
     let table_name = table_name_sym.name.clone();
     debug!("   - table name: {}", table_name);
 
-    if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::ParentLeft {
-        return Err(ParserError::SyntaxError);
-    };
+    assert_token(iter.next(), Token::ParentLeft)?;
 
     // get attributes
     let mut attrs = vec![];
@@ -235,9 +228,7 @@ fn parser_insert_into_table(
     }
     debug!("   -- attributes: {:?}", attrs);
 
-    if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::Values {
-        return Err(ParserError::SyntaxError);
-    };
+    assert_token(iter.next(), Token::Values)?;
 
     let attrs_num = attrs.len();
     let mut rows: Vec<Vec<String>> = Vec::new();
@@ -253,13 +244,9 @@ fn parser_insert_into_table(
                     }
                     row.push(attr);
                     if i == attrs_num - 1 {
-                        if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::ParentRight {
-                            return Err(ParserError::SyntaxError);
-                        }
+                        assert_token(iter.next(), Token::ParentRight)?;
                     } else {
-                        if iter.next().ok_or(ParserError::SyntaxError)?.token != Token::Comma {
-                            return Err(ParserError::SyntaxError);
-                        }
+                        assert_token(iter.next(), Token::Comma)?;
                     }
                 }
                 debug!("   -- row: {:?}", row);
@@ -280,6 +267,15 @@ fn check_id(sym: &Symbol) -> Result<(), ParserError> {
     if sym.group != Group::Identifier {
         return Err(ParserError::SyntaxError);
     }
+    Ok(())
+}
+
+/// Check if the symbol is the expected token.
+#[inline]
+fn assert_token(sym: Option<&Symbol>, token: Token) -> Result<(), ParserError> {
+    if sym.ok_or(ParserError::SyntaxError)?.token != token {
+        return Err(ParserError::SyntaxError);
+    };
     Ok(())
 }
 
