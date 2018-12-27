@@ -58,12 +58,9 @@ impl Parser {
             Some(symbol) => match symbol.token {
                 Token::CreateDatabase => {
                     let _ = iter.next(); // "create database"
-                    let db_name_sym = iter.next().ok_or(ParserError::SyntaxError)?;
 
-                    // name should not be as same as keywords
-                    if db_name_sym.group != Group::Identifier {
-                        return Err(ParserError::SyntaxError);
-                    }
+                    let db_name_sym = iter.next().ok_or(ParserError::SyntaxError)?;
+                    check_id(db_name_sym)?;
 
                     sql.create_database(&db_name_sym.name)
                         .map_err(|e| ParserError::SQLError(e))?;
@@ -75,10 +72,7 @@ impl Parser {
                     let _ = iter.next();
 
                     let table_name_sym = iter.next().ok_or(ParserError::SyntaxError)?;
-
-                    if table_name_sym.group != Group::Identifier {
-                        return Err(ParserError::SyntaxError);
-                    }
+                    check_id(table_name_sym)?;
 
                     let table_name = table_name_sym.name.clone();
                     debug!("   - table name: {}", table_name);
@@ -189,6 +183,14 @@ impl Parser {
 
                     Ok(())
                 }
+                Token::InsertInto => {
+                    debug!("-> select table");
+                    let (table_name, attrs, rows) = parser_insert_into_table(&mut iter)?;
+                    sql.insert_into_table(&table_name, attrs, rows)
+                        .map_err(|e| ParserError::SQLError(e))?;
+
+                    Ok(())
+                }
                 _ => {
                     return Err(ParserError::SyntaxError);
                 }
@@ -207,9 +209,7 @@ fn parser_insert_into_table(
     let _ = iter.next();
 
     let table_name_sym = iter.next().ok_or(ParserError::SyntaxError)?;
-    if table_name_sym.group != Group::Identifier {
-        return Err(ParserError::SyntaxError);
-    }
+    check_id(table_name_sym)?;
 
     let table_name = table_name_sym.name.clone();
     debug!("   - table name: {}", table_name);
@@ -272,6 +272,15 @@ fn parser_insert_into_table(
     }
 
     Ok((table_name, attrs, rows))
+}
+
+/// Check if the symbol is an identifier
+#[inline]
+fn check_id(sym: &Symbol) -> Result<(), ParserError> {
+    if sym.group != Group::Identifier {
+        return Err(ParserError::SyntaxError);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
