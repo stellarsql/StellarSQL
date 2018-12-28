@@ -653,7 +653,56 @@ impl File {
         Ok(rows)
     }
 
-    // TODO: delete_rows(username: &str, db_name: &str, table_name: &str, row_id_range: &Vec<u32>, file_base_path: Option<&str>) -> Result<(), FileError>
+    pub fn delete_rows(
+        username: &str,
+        db_name: &str,
+        table_name: &str,
+        row_range: &Vec<u32>,
+        file_base_path: Option<&str>,
+    ) -> Result<(), FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+        // perform storage check toward table level
+        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
+
+        // open table tsv
+        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+        let table_tsv_file = fs::File::open(&table_tsv_path)?;
+        let buffered = BufReader::new(table_tsv_file);
+
+        let mut new_content: Vec<String> = vec![];
+
+        // overwrite the `__valid__` attr of rows to delete
+        let mut rows_deleted = 0;
+        for (idx, line) in buffered.lines().enumerate() {
+            if idx < (row_range[0] + 1) as usize || idx > row_range[1] as usize {
+                new_content.push(line?);
+            } else {
+                let l = line?;
+                if (&l).starts_with("0") {
+                    return Err(FileError::RangeContainsDeletedRecord);
+                }
+                new_content.push(format!("0{}", &l[1..]));
+                rows_deleted += 1;
+            }
+        }
+        if rows_deleted < row_range[1] - row_range[0] {
+            return Err(FileError::RangeExceedLatestRecord);
+        }
+
+        // overwrite table tsv file
+        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+        let mut table_tsv_file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(table_tsv_path)?;
+        table_tsv_file.write_all(new_content.join("\n").as_bytes())?;
+
+        Ok(())
+    }
 
     // TODO: modify_row(username: &str, db_name: &str, table_name: &str, row_id: u32, new_row: &Row, file_base_path: Option<&str>) -> Result<(), FileError>
 
@@ -1185,7 +1234,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_append_and_fetch_rows() {
+    pub fn test_append_fetch_delete_rows() {
         let file_base_path = "data8";
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
@@ -1322,5 +1371,100 @@ mod tests {
             File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 4], Some(file_base_path)).unwrap_err(),
             FileError::RangeExceedLatestRecord
         );
+
+        File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![1, 2], Some(file_base_path)).unwrap();
+
+        assert_eq!(
+            File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![1, 2], Some(file_base_path)).unwrap_err(),
+            FileError::RangeContainsDeletedRecord,
+        );
+
+        assert_eq!(
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 2], Some(file_base_path)).unwrap_err(),
+            FileError::RangeContainsDeletedRecord,
+        );
+
+        File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 1], Some(file_base_path)).unwrap();
+
+        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+        ))
+        .unwrap()
+        .split('\n')
+        .map(|s| s.to_string())
+        .collect();
+
+        assert_eq!(aff_tsv_content.len(), 4);
+        assert_eq!(aff_tsv_content[1], "0\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+        assert_eq!(aff_tsv_content[2], "0\t2\tben@foo.com\tBen\t+886900000002".to_string());
+        assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+
+        let data = vec![
+            ("AffID", "4"),
+            ("AffName", "John"),
+            ("AffEmail", "john@dee.com"),
+            ("AffPhoneNum", "+886900000004"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        let data = vec![
+            ("AffID", "5"),
+            ("AffName", "Ray"),
+            ("AffEmail", "ray@dee.com"),
+            ("AffPhoneNum", "+886900000005"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        let data = vec![
+            ("AffID", "6"),
+            ("AffName", "Bryn"),
+            ("AffEmail", "bryn@dee.com"),
+            ("AffPhoneNum", "+886900000006"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        File::append_rows(
+            "crazyguy",
+            "BookerDB",
+            "Affiliates",
+            &aff_table.rows[3..].iter().cloned().collect(),
+            Some(file_base_path),
+        )
+        .unwrap();
+
+        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+        ))
+        .unwrap()
+        .split('\n')
+        .map(|s| s.to_string())
+        .collect();
+
+        assert_eq!(aff_tsv_content.len(), 7);
+
+        assert_eq!(
+            File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 7], Some(file_base_path)).unwrap_err(),
+            FileError::RangeExceedLatestRecord
+        );
+
+        File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 6], Some(file_base_path)).unwrap();
+
+        assert_eq!(
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 6], Some(file_base_path)).unwrap_err(),
+            FileError::RangeContainsDeletedRecord,
+        );
+
+        let rows: Vec<Row> =
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 5], Some(file_base_path)).unwrap();
+
+        assert_eq!(rows.len(), 3);
+
+        for i in 0..3 {
+            for (attr, val) in aff_table.rows[i + 2].0.iter() {
+                assert_eq!(val.clone(), rows[i].0[attr]);
+            }
+        }
     }
 }
