@@ -16,7 +16,7 @@ pub struct File {
 // Ideally, File is a stateless struct
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum FileError {
     Io,
     BaseDirNotExists,
@@ -610,7 +610,7 @@ impl File {
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
         let tables_file = fs::File::open(&tables_json_path)?;
-        let mut tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+        let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
 
         // locate meta of target table
         let idx_target = tables_json
@@ -811,13 +811,10 @@ mod tests {
 
         assert_eq!(dbs_json.dbs.len(), 0);
 
-        match File::create_username("happyguy", Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(
-                format!("{}", e),
-                "User name already exists and cannot be created again."
-            ),
-        };
+        assert_eq!(
+            File::create_username("happyguy", Some(file_base_path)).unwrap_err(),
+            FileError::UsernameExists
+        );
     }
 
     #[test]
@@ -851,13 +848,10 @@ mod tests {
         let usernames: Vec<String> = File::get_usernames(Some(file_base_path)).unwrap();
         assert_eq!(usernames, vec!["crazyguy", "sadguy"]);
 
-        match File::remove_username("happyguy", Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(
-                format!("{}", e),
-                "Specified user name not exists. Please create this username first."
-            ),
-        };
+        assert_eq!(
+            File::remove_username("happyguy", Some(file_base_path)).unwrap_err(),
+            FileError::UsernameNotExists
+        );
 
         File::remove_username("sadguy", Some(file_base_path)).unwrap();
 
@@ -927,18 +921,14 @@ mod tests {
 
         assert_eq!(tables_json.tables.len(), 0);
 
-        match File::create_db("happyguy", "BookerDB", Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(
-                format!("{}", e),
-                "Specified user name not exists. Please create this username first."
-            ),
-        };
-
-        match File::create_db("crazyguy", "BookerDB", Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(format!("{}", e), "DB already exists and cannot be created again."),
-        };
+        assert_eq!(
+            File::create_db("happyguy", "BookerDB", Some(file_base_path)).unwrap_err(),
+            FileError::UsernameNotExists
+        );
+        assert_eq!(
+            File::create_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap_err(),
+            FileError::DbExists
+        );
     }
 
     #[test]
@@ -963,13 +953,10 @@ mod tests {
         let dbs: Vec<String> = File::get_dbs("happyguy", Some(file_base_path)).unwrap();
         assert_eq!(dbs, vec!["BookerDB", "MovieDB"]);
 
-        match File::get_dbs("sadguy", Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(
-                format!("{}", e),
-                "Specified user name not exists. Please create this username first."
-            ),
-        };
+        assert_eq!(
+            File::get_dbs("sadguy", Some(file_base_path)).unwrap_err(),
+            FileError::UsernameNotExists
+        );
     }
 
     #[test]
@@ -991,23 +978,20 @@ mod tests {
         let dbs: Vec<String> = File::get_dbs("crazyguy", Some(file_base_path)).unwrap();
         assert_eq!(dbs, vec!["BookerDB", "PhotoDB"]);
 
-        match File::remove_db("happyguy", "BookerDB", Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(
-                format!("{}", e),
-                "Specified user name not exists. Please create this username first."
-            ),
-        };
+        assert_eq!(
+            File::remove_db("happyguy", "BookerDB", Some(file_base_path)).unwrap_err(),
+            FileError::UsernameNotExists
+        );
 
         File::remove_db("crazyguy", "PhotoDB", Some(file_base_path)).unwrap();
 
         let dbs: Vec<String> = File::get_dbs("crazyguy", Some(file_base_path)).unwrap();
         assert_eq!(dbs, vec!["BookerDB"]);
 
-        match File::remove_db("crazyguy", "PhotoDB", Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(format!("{}", e), "DB not exists. Please create DB first."),
-        };
+        assert_eq!(
+            File::remove_db("crazyguy", "PhotoDB", Some(file_base_path)).unwrap_err(),
+            FileError::DbNotExists
+        );
 
         File::remove_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
@@ -1157,23 +1141,18 @@ mod tests {
         assert_eq!(aff_tsv_content[1], "AffID".to_string());
         assert_eq!(aff_tsv_content.len(), 5);
 
-        match File::create_table("happyguy", "BookerDB", &htl_table, Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(
-                format!("{}", e),
-                "Specified user name not exists. Please create this username first."
-            ),
-        };
-
-        match File::create_table("crazyguy", "MusicDB", &htl_table, Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(format!("{}", e), "DB not exists. Please create DB first."),
-        };
-
-        match File::create_table("crazyguy", "BookerDB", &htl_table, Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(format!("{}", e), "Table already exists and cannot be created again."),
-        };
+        assert_eq!(
+            File::create_table("happyguy", "BookerDB", &htl_table, Some(file_base_path)).unwrap_err(),
+            FileError::UsernameNotExists
+        );
+        assert_eq!(
+            File::create_table("crazyguy", "MusicDB", &htl_table, Some(file_base_path)).unwrap_err(),
+            FileError::DbNotExists
+        );
+        assert_eq!(
+            File::create_table("crazyguy", "BookerDB", &htl_table, Some(file_base_path)).unwrap_err(),
+            FileError::TableExists
+        );
 
         File::drop_table("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap();
 
@@ -1187,10 +1166,10 @@ mod tests {
 
         assert_eq!(tables.len(), 1);
 
-        match File::drop_table("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(format!("{}", e), "Table not exists. Please create table first."),
-        };
+        assert_eq!(
+            File::drop_table("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap_err(),
+            FileError::TableNotExists
+        );
 
         File::drop_table("crazyguy", "BookerDB", "Hotels", Some(file_base_path)).unwrap();
 
@@ -1339,12 +1318,9 @@ mod tests {
             }
         }
 
-        match File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 4], Some(file_base_path)) {
-            Ok(_) => {}
-            Err(e) => assert_eq!(
-                format!("{}", e),
-                "The range of rows to fetch exceeds the latest record on the table."
-            ),
-        };
+        assert_eq!(
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 4], Some(file_base_path)).unwrap_err(),
+            FileError::RangeExceedLatestRecord
+        );
     }
 }
