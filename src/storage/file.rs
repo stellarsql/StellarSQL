@@ -34,6 +34,7 @@ pub enum FileError {
     TableTsvNotExists,
     JsonParse,
     RangeContainsDeletedRecord,
+    RangeExceedLatestRecord,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -109,6 +110,9 @@ impl fmt::Display for FileError {
             FileError::TableTsvNotExists => write!(f, "Table exists but correspoding tsv file is lost."),
             FileError::JsonParse => write!(f, "JSON parsing error."),
             FileError::RangeContainsDeletedRecord => write!(f, "The range of rows to fetch contains deleted records."),
+            FileError::RangeExceedLatestRecord => {
+                write!(f, "The range of rows to fetch exceeds the latest record on the table.")
+            }
         }
     }
 }
@@ -550,7 +554,7 @@ impl File {
         let tables_file = fs::File::open(&tables_json_path)?;
         let mut tables_json: TablesJson = serde_json::from_reader(tables_file)?;
 
-        // locate target table
+        // locate meta of target table
         let idx_target = tables_json
             .tables
             .iter()
@@ -590,57 +594,64 @@ impl File {
         Ok(())
     }
 
-    // pub fn fetch_rows(
-    //     username: &str,
-    //     db_name: &str,
-    //     table_name: &str,
-    //     row_range: &Vec<u32>,
-    //     file_base_path: Option<&str>,
-    // ) -> Result<Vec<Row>, FileError> {
-    //     // determine file base path
-    //     let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+    pub fn fetch_rows(
+        username: &str,
+        db_name: &str,
+        table_name: &str,
+        row_range: &Vec<u32>,
+        file_base_path: Option<&str>,
+    ) -> Result<Vec<Row>, FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
-    //     // perform storage check toward table level
-    //     File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
+        // perform storage check toward table level
+        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
 
-    //     // load current tables from `tables.json`
-    //     let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
-    //     let tables_file = fs::File::open(&tables_json_path)?;
-    //     let mut tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+        // load current tables from `tables.json`
+        let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
+        let tables_file = fs::File::open(&tables_json_path)?;
+        let mut tables_json: TablesJson = serde_json::from_reader(tables_file)?;
 
-    //     // locate target table
-    //     let idx_target = tables_json
-    //         .tables
-    //         .iter()
-    //         .position(|table_meta| &table_meta.name == table_name);
+        // locate meta of target table
+        let idx_target = tables_json
+            .tables
+            .iter()
+            .position(|table_meta| &table_meta.name == table_name);
 
-    //     let table_meta_target: &TableMeta = match idx_target {
-    //         Some(idx) => &tables_json.tables[idx],
-    //         None => return Err(FileError::TableNotExists),
-    //     };
+        let table_meta_target: &TableMeta = match idx_target {
+            Some(idx) => &tables_json.tables[idx],
+            None => return Err(FileError::TableNotExists),
+        };
 
-    //     // load rows from table
-    //     let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-    //     let table_tsv_file = fs::File::open(&table_tsv_path)?;
-    //     let buffered = BufReader::new(table_tsv_file);
+        // load rows from table
+        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+        let table_tsv_file = fs::File::open(&table_tsv_path)?;
+        let buffered = BufReader::new(table_tsv_file);
 
-    //     let mut rows:Vec<Row> = vec![];
-    //     let mut curr_idx = row_range[0];
-    //     for line in buffered.lines().skip(row_range[0] as usize) {
-    //         let raw_line:Vec<String> = line?.replace('\t',"").split('\t').collect();
-    //         if raw_line[0] == '0' {
-    //             return Err(FileError::RangeContainsDeletedRecord);
-    //         }
-    //         let mut new_row = Row::new();
-    //         for i in [1..raw_line.len()] {
-    //             new_row.0.insert(table_meta_target.attrs_order[i], raw_line[i])
-    //         }
-    //         curr_idx += 1;
-    //         if curr_idx == row_range[1] {
-    //             break;
-    //         }
-    //     }
-    // }
+        let mut rows: Vec<Row> = vec![];
+        let mut curr_idx = row_range[0];
+        for line in buffered.lines().skip((row_range[0] + 1) as usize) {
+            let raw_line: Vec<String> = line?.replace('\n', "").split('\t').map(|e| e.to_string()).collect();
+            if raw_line[0] == "0".to_string() {
+                return Err(FileError::RangeContainsDeletedRecord);
+            }
+            let mut new_row = Row::new();
+            for i in 1..raw_line.len() {
+                new_row
+                    .0
+                    .insert(table_meta_target.attrs_order[i].clone(), raw_line[i].clone());
+            }
+            rows.push(new_row);
+            curr_idx += 1;
+            if curr_idx == row_range[1] {
+                break;
+            }
+        }
+        if rows.len() < ((row_range[1] - row_range[0]) as usize) {
+            return Err(FileError::RangeExceedLatestRecord);
+        }
+        Ok(rows)
+    }
 
     // TODO: delete_rows(username: &str, db_name: &str, table_name: &str, row_id_range: &Vec<u32>, file_base_path: Option<&str>) -> Result<(), FileError>
 
@@ -1195,7 +1206,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_append_rows() {
+    pub fn test_append_and_fetch_rows() {
         let file_base_path = "data8";
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
@@ -1296,5 +1307,44 @@ mod tests {
         assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
         assert_eq!(aff_tsv_content[2], "1\t2\tben@foo.com\tBen\t+886900000002".to_string());
         assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+
+        let rows: Vec<Row> =
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 1], Some(file_base_path)).unwrap();
+
+        assert_eq!(rows.len(), 1);
+
+        for (attr, val) in aff_table.rows[0].0.iter() {
+            assert_eq!(val.clone(), rows[0].0[attr]);
+        }
+
+        let rows: Vec<Row> =
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 3], Some(file_base_path)).unwrap();
+
+        assert_eq!(rows.len(), 3);
+
+        for i in 0..3 {
+            for (attr, val) in aff_table.rows[i].0.iter() {
+                assert_eq!(val.clone(), rows[i].0[attr]);
+            }
+        }
+
+        let rows: Vec<Row> =
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![1, 3], Some(file_base_path)).unwrap();
+
+        assert_eq!(rows.len(), 2);
+
+        for i in 0..2 {
+            for (attr, val) in aff_table.rows[i + 1].0.iter() {
+                assert_eq!(val.clone(), rows[i].0[attr]);
+            }
+        }
+
+        match File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 4], Some(file_base_path)) {
+            Ok(_) => {}
+            Err(e) => assert_eq!(
+                format!("{}", e),
+                "The range of rows to fetch exceeds the latest record on the table."
+            ),
+        };
     }
 }
