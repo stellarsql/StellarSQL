@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
-use std::io::{Write, BufReader, BufRead};
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -380,8 +380,8 @@ impl File {
         };
 
         // determine storing order of attrs in .tsv and .bin
-        // primary key attrs are always at first
-        new_table_meta.attrs_order = vec![];
+        // `__valid__` and primary key attrs are always at first
+        new_table_meta.attrs_order = vec!["__valid__".to_string()];
         new_table_meta
             .attrs_order
             .extend_from_slice(&new_table_meta.primary_key);
@@ -450,17 +450,14 @@ impl File {
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward db level
-        match File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None) {
-            Ok(_) => (),
-            Err(e) => return Err(e),
-        };
+        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
         let tables_file = fs::File::open(&tables_json_path)?;
         let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
 
-        // return the vector of table info
+        // return the vector of table meta
         Ok(tables_json.tables)
     }
 
@@ -482,7 +479,7 @@ impl File {
         let tables_file = fs::File::open(&tables_json_path)?;
         let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
 
-        // return the vector of table info
+        // return the vector of table meta
         for table in tables_json.tables {
             if &table.name == table_name {
                 return Ok(table);
@@ -567,9 +564,9 @@ impl File {
         // create chunk of rows to be inserted
         let mut chunk = String::new();
         for row in rows {
-            let mut raw_row = vec![];
-            let attrs = table_meta_target
-                .attrs_order
+            // set `__valid__` to 1
+            let mut raw_row = vec!["1".to_string()];
+            let attrs = table_meta_target.attrs_order[1..]
                 .iter()
                 .map(|attr| row.0.get(attr).unwrap().clone())
                 .collect::<Vec<String>>();
@@ -630,20 +627,18 @@ impl File {
     //     let mut rows:Vec<Row> = vec![];
     //     let mut curr_idx = row_range[0];
     //     for line in buffered.lines().skip(row_range[0] as usize) {
-    //         let raw_line = line.replace('\t',"").split('\t');
+    //         let raw_line:Vec<String> = line?.replace('\t',"").split('\t').collect();
     //         if raw_line[0] == '0' {
     //             return Err(FileError::RangeContainsDeletedRecord);
     //         }
+    //         let mut new_row = Row::new();
     //         for i in [1..raw_line.len()] {
     //             new_row.0.insert(table_meta_target.attrs_order[i], raw_line[i])
     //         }
-    //         let mut new_row = Row::new();
-    //         let attrs = table_meta_target
-    //             .attrs_order
-    //             .iter()
-    //             .map(|attr| row.0.get(attr).unwrap().clone())
-    //             .collect::<Vec<String>>();
     //         curr_idx += 1;
+    //         if curr_idx == row_range[1] {
+    //             break;
+    //         }
     //     }
     // }
 
@@ -1085,22 +1080,22 @@ mod tests {
         let ideal_tables = vec![
             TableMeta {
                 name: "Affiliates".to_string(),
-                path_tsv: "Affiliates.tsv".to_string(),
-                path_bin: "Affiliates.bin".to_string(),
                 primary_key: vec!["AffID".to_string()],
                 foreign_key: vec![],
                 reference_table: None,
                 reference_attr: None,
+                path_tsv: "Affiliates.tsv".to_string(),
+                path_bin: "Affiliates.bin".to_string(),
                 // ignore attrs checking
                 attrs_order: vec![],
                 attrs: HashMap::new(),
             },
             TableMeta {
                 name: "Hotels".to_string(),
-                path_tsv: "Hotels.tsv".to_string(),
-                path_bin: "Hotels.bin".to_string(),
                 primary_key: vec!["HotelID".to_string()],
                 foreign_key: vec![],
+                path_tsv: "Hotels.tsv".to_string(),
+                path_bin: "Hotels.bin".to_string(),
                 reference_table: None,
                 reference_attr: None,
                 // ignore attrs checking
@@ -1119,12 +1114,12 @@ mod tests {
 
         for i in 0..tables.len() {
             assert_eq!(tables[i].name, ideal_tables[i].name);
-            assert_eq!(tables[i].path_tsv, ideal_tables[i].path_tsv);
-            assert_eq!(tables[i].path_bin, ideal_tables[i].path_bin);
             assert_eq!(tables[i].primary_key, ideal_tables[i].primary_key);
             assert_eq!(tables[i].foreign_key, ideal_tables[i].foreign_key);
             assert_eq!(tables[i].reference_table, ideal_tables[i].reference_table);
-            // assert_eq!(tables[i].reference_attr, ideal_tables[i].reference_attr);
+            assert_eq!(tables[i].reference_attr, ideal_tables[i].reference_attr);
+            assert_eq!(tables[i].path_tsv, ideal_tables[i].path_tsv);
+            assert_eq!(tables[i].path_bin, ideal_tables[i].path_bin);
         }
 
         assert!(Path::new(&format!(
@@ -1147,8 +1142,9 @@ mod tests {
         .map(|s| s.to_string())
         .collect();
 
-        assert_eq!(aff_tsv_content[0], "AffID".to_string());
-        assert_eq!(aff_tsv_content.len(), 4);
+        assert_eq!(aff_tsv_content[0], "__valid__".to_string());
+        assert_eq!(aff_tsv_content[1], "AffID".to_string());
+        assert_eq!(aff_tsv_content.len(), 5);
 
         match File::create_table("happyguy", "BookerDB", &htl_table, Some(file_base_path)) {
             Ok(_) => {}
@@ -1261,7 +1257,7 @@ mod tests {
         .collect();
 
         assert_eq!(aff_tsv_content.len(), 2);
-        assert_eq!(aff_tsv_content[1], "1\ttom@foo.com\tTom\t+886900000001".to_string());
+        assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
 
         let data = vec![
             ("AffID", "2"),
@@ -1297,8 +1293,8 @@ mod tests {
         .collect();
 
         assert_eq!(aff_tsv_content.len(), 4);
-        assert_eq!(aff_tsv_content[1], "1\ttom@foo.com\tTom\t+886900000001".to_string());
-        assert_eq!(aff_tsv_content[2], "2\tben@foo.com\tBen\t+886900000002".to_string());
-        assert_eq!(aff_tsv_content[3], "3\tleo@dee.com\tLeo\t+886900000003".to_string());
+        assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+        assert_eq!(aff_tsv_content[2], "1\t2\tben@foo.com\tBen\t+886900000002".to_string());
+        assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
     }
 }

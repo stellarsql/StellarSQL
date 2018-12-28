@@ -30,7 +30,7 @@ pub struct Table {
 pub struct Row(pub HashMap<String, String>);
 
 impl Row {
-    fn new() -> Row {
+    pub fn new() -> Row {
         Row(HashMap::new())
     }
 }
