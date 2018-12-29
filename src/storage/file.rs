@@ -552,7 +552,7 @@ impl File {
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
         let tables_file = fs::File::open(&tables_json_path)?;
-        let mut tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+        let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
 
         // locate meta of target table
         let idx_target = tables_json
@@ -560,8 +560,8 @@ impl File {
             .iter()
             .position(|table_meta| &table_meta.name == table_name);
 
-        let table_meta_target: &mut TableMeta = match idx_target {
-            Some(idx) => &mut tables_json.tables[idx],
+        let table_meta_target: &TableMeta = match idx_target {
+            Some(idx) => &tables_json.tables[idx],
             None => return Err(FileError::TableNotExists),
         };
 
@@ -582,14 +582,6 @@ impl File {
         let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
         let mut table_tsv_file = fs::OpenOptions::new().append(true).open(table_tsv_path)?;
         table_tsv_file.write_all(chunk.as_bytes())?;
-
-        // overwrite `tables.json`
-        let mut tables_file = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(tables_json_path)?;
-        tables_file.write_all(serde_json::to_string_pretty(&tables_json)?.as_bytes())?;
 
         Ok(())
     }
@@ -721,7 +713,7 @@ impl File {
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
         let tables_file = fs::File::open(&tables_json_path)?;
-        let mut tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+        let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
 
         // locate meta of target table
         let idx_target = tables_json
@@ -729,8 +721,8 @@ impl File {
             .iter()
             .position(|table_meta| &table_meta.name == table_name);
 
-        let table_meta_target: &mut TableMeta = match idx_target {
-            Some(idx) => &mut tables_json.tables[idx],
+        let table_meta_target: &TableMeta = match idx_target {
+            Some(idx) => &tables_json.tables[idx],
             None => return Err(FileError::TableNotExists),
         };
 
