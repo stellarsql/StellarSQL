@@ -1123,7 +1123,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_create_load_drop_table() {
+    pub fn test_create_get_load_drop_table() {
         let file_base_path = "data7";
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
@@ -1218,6 +1218,12 @@ mod tests {
             },
         ];
 
+        let table_names = File::get_tables("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
+
+        for i in 0..ideal_tables.len() {
+            assert_eq!(table_names[i], ideal_tables[i].name);
+        }
+
         // load_table_meta
         assert!(File::load_table_meta("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).is_ok());
         assert!(File::load_table_meta("crazyguy", "BookerDB", "none_table", Some(file_base_path)).is_err());
@@ -1304,7 +1310,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_append_fetch_delete_rows() {
+    pub fn test_append_fetch_delete_modify_rows() {
         let file_base_path = "data8";
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
