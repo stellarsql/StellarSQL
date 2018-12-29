@@ -27,7 +27,6 @@ pub enum Token {
     AlterColumn,
     AlterTable,
     All,
-    And,
     Any,
     As,
     Asc,
@@ -73,9 +72,7 @@ pub enum Token {
     LeftJoin,
     Like,
     Limit,
-    Not,
     NotNull,
-    Or,
     OrderBy,
     OuterJoin,
     PrimaryKey,
@@ -118,6 +115,9 @@ pub enum Token {
     NE, // !=
     GT, // >
     GE, // >=
+    AND,
+    NOT,
+    OR,
 
     /* Delimiter */
     ParentLeft,  // (
@@ -151,7 +151,6 @@ lazy_static! {
         m.insert("alter column", sym("alter column", Token::AlterColumn, Group::Keyword));
         m.insert("alter table", sym("alter table", Token::AlterTable, Group::Keyword));
         m.insert("all", sym("all", Token::All, Group::Keyword));
-        m.insert("and", sym("and", Token::And, Group::Keyword));
         m.insert("any", sym("any", Token::Any, Group::Keyword));
         m.insert("as", sym("as", Token::As, Group::Keyword));
         m.insert("asc", sym("asc", Token::Asc, Group::Keyword));
@@ -197,9 +196,7 @@ lazy_static! {
         m.insert("left join", sym("left join", Token::LeftJoin, Group::Keyword));
         m.insert("like", sym("like", Token::Like, Group::Keyword));
         m.insert("limit", sym("limit", Token::Limit, Group::Keyword));
-        m.insert("not", sym("not", Token::Not, Group::Keyword));
         m.insert("not null", sym("not null", Token::NotNull, Group::Keyword));
-        m.insert("or", sym("or", Token::Or, Group::Keyword));
         m.insert("order by", sym("order by", Token::OrderBy, Group::Keyword));
         m.insert("outer join", sym("outer join", Token::OuterJoin, Group::Keyword));
         m.insert("primary key", sym("primary key", Token::PrimaryKey, Group::Keyword));
@@ -242,6 +239,9 @@ lazy_static! {
         m.insert("!=", sym("!=", Token::NE, Group::Operator));
         m.insert("<", sym("<", Token::LT, Group::Operator));
         m.insert("<=", sym("<=", Token::LE, Group::Operator));
+        m.insert("and", sym("and", Token::AND, Group::Operator));
+        m.insert("not", sym("not", Token::NOT, Group::Operator));
+        m.insert("or", sym("or", Token::OR, Group::Operator));
 
         m //return m
     };
