@@ -425,6 +425,16 @@ impl File {
             .open(table_tsv_path)?;
         table_tsv_file.write_all(new_table_meta.attrs_order.join("\t").as_bytes())?;
 
+        // create corresponding bin for the table, which is empty
+        let table_bin_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_bin);
+        let mut table_bin_file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(table_bin_path)?;
+        table_bin_file.write_all("".as_bytes())?;
+
         // insert the new table record into `tables.json`
         tables_json.tables.push(new_table_meta);
 
@@ -540,6 +550,12 @@ impl File {
         let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
         if Path::new(&table_tsv_path).exists() {
             fs::remove_file(&table_tsv_path)?;
+        }
+
+        // remove corresponding bin file
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        if Path::new(&table_bin_path).exists() {
+            fs::remove_file(&table_bin_path)?;
         }
 
         // overwrite `tables.json`
@@ -1308,6 +1324,16 @@ mod tests {
             file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
         ))
         .exists());
+        assert!(Path::new(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Affiliates.bin"
+        ))
+        .exists());
+        assert!(Path::new(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Hotels.bin"
+        ))
+        .exists());
 
         let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
             "{}/{}/{}/{}",
@@ -1342,6 +1368,11 @@ mod tests {
             file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
         ))
         .exists());
+        assert!(!Path::new(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Affiliates.bin"
+        ))
+        .exists());
 
         let tables = File::load_tables_meta("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
@@ -1357,6 +1388,11 @@ mod tests {
         assert!(!Path::new(&format!(
             "{}/{}/{}/{}",
             file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
+        ))
+        .exists());
+        assert!(!Path::new(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Hotels.bin"
         ))
         .exists());
 
