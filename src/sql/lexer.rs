@@ -45,7 +45,7 @@ impl Scanner {
         loop {
             match chars.next() {
                 Some(x) => {
-                    if is_identifier_char(x) {
+                    if is_identifier_char(x) || is_operator(x) {
                         self.pos.cursor_r += 1;
                     } else {
                         match x {
@@ -165,6 +165,7 @@ impl Scanner {
                                     }
                                 }
                                 if is_delimiter(x) {
+                                    debug!("take `{}`", x);
                                     self.tokens.push(symbol::Symbol::match_delimiter(x).unwrap());
                                 }
                                 // set the cursor next to `x` in the right
@@ -197,6 +198,10 @@ impl Scanner {
 
 fn is_identifier_char(ch: char) -> bool {
     ch.is_digit(10) || ch.is_ascii_alphabetic() || ch == '\'' || ch == '.' || ch == '"'
+}
+
+fn is_operator(ch: char) -> bool {
+    ch == '>' || ch == '=' || ch == '<' || ch == '-' || ch == '+'
 }
 
 fn is_delimiter(ch: char) -> bool {
