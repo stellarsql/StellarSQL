@@ -3,6 +3,8 @@ use crate::component::field::Field;
 use crate::component::table::Table;
 use crate::sql::lexer::LexerError;
 use crate::sql::lexer::Scanner;
+use crate::sql::query::Node;
+use crate::sql::query::QueryData;
 use crate::sql::symbol::Group;
 use crate::sql::symbol::Symbol;
 use crate::sql::symbol::Token;
@@ -260,6 +262,74 @@ fn parser_insert_into_table(
     Ok((table_name, attrs, rows))
 }
 
+/// parse predicate tokens from infix to postfix
+fn parse_infix_postfix(symbols: Vec<&Symbol>) -> Result<Vec<&Symbol>, ParserError> {
+    let mut iter = symbols.iter();
+    let mut stack: Vec<&Symbol> = vec![];
+    let mut output: Vec<&Symbol> = vec![];
+    loop {
+        let mut parent_counter = 0;
+        match iter.next() {
+            Some(s) if s.token == Token::ParentLeft => {
+                parent_counter += 1;
+                stack.push(*s);
+            }
+            Some(s) if s.token == Token::ParentRight => loop {
+                match stack.pop() {
+                    Some(s_) if s_.token == Token::ParentLeft => {
+                        parent_counter -= 1;
+                        break;
+                    }
+                    Some(s_) => output.push(s_),
+                    None => break,
+                }
+            },
+            Some(s) if s.group == Group::Operator => {
+                loop {
+                    match stack.last() {
+                        Some(last) if last.group == Group::Operator => {
+                            let l = operator_priority(&last.token);
+                            let r = operator_priority(&s.token);
+                            if l >= r {
+                                output.push(*last);
+                                stack.pop();
+                            } else {
+                                break;
+                            }
+                        }
+                        Some(_) | None => break,
+                    }
+                }
+                stack.push(*s);
+            }
+            Some(s) => output.push(*s),
+            None => {
+                if parent_counter > 0 {
+                    return Err(ParserError::SyntaxError(String::from("invalid predicate syntax")));
+                }
+                loop {
+                    match stack.pop() {
+                        Some(s_) => output.push(s_),
+                        None => break,
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    Ok(output)
+}
+
+#[inline]
+fn operator_priority(t: &Token) -> u32 {
+    match t {
+        &Token::NOT => 2,
+        &Token::AND | &Token::OR => 1,
+        _ => 3, // >=, >, =, <, <=
+    }
+}
+
 /// Get a list of identifiers, which in form as
 ///
 /// `is_parent` parameter
@@ -449,4 +519,37 @@ mod tests {
             Err(e) => assert_eq!(format!("{}", e), "error caused by lexer: please use ascii character."),
         }
     }
+
+    fn assert_parse_infix_postfix(query: &str, answer: Vec<&str>) {
+        let mut parser = Parser::new(query).unwrap();
+        parser.tokens.pop(); // `;`
+        let mut iter = parser.tokens.iter();
+        let mut tokens: Vec<&Symbol> = vec![];
+        loop {
+            match iter.next() {
+                Some(s) => tokens.push(s),
+                None => break,
+            }
+        }
+        let postfix = parse_infix_postfix(tokens).unwrap();
+        println!("{:#?}", postfix);
+        println!("{:?}", answer);
+        for i in 0..answer.len() {
+            assert_eq!(&postfix[i].name, answer[i]);
+        }
+    }
+
+    #[test]
+    fn test_parse_infix_postfix() {
+        let query = "not a1 = 3 and b2 >= 5;";
+        let answer = ["a1", "3", "=", "not", "b2", "5", ">=", "and"];
+        assert_parse_infix_postfix(query, answer.to_vec());
+
+        let query = "not(not a1 = 3 and not (b2 >= 5 or c1 < 7));";
+        let answer = [
+            "a1", "3", "=", "not", "b2", "5", ">=", "c1", "7", "<", "or", "not", "and", "not",
+        ];
+        assert_parse_infix_postfix(query, answer.to_vec());
+    }
+
 }
