@@ -21,6 +21,7 @@ use tokio::io::write_all;
 use crate::connection::message;
 use crate::connection::request::Request;
 use crate::connection::response::Response;
+use crate::sql::worker::SQL;
 use env_logger;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
@@ -73,6 +74,8 @@ fn process(socket: TcpStream) {
 
     let messages = message::new(BufReader::new(reader));
 
+    let mut sql = SQL::new("").unwrap();
+
     // note the `move` keyword on the closure here which moves ownership
     // of the reference into the closure, which we'll need for spawning the
     // client below.
@@ -81,9 +84,9 @@ fn process(socket: TcpStream) {
     // requests (lines) we receive from the client. The actual handling here
     // is pretty simple, first we parse the request and if it's valid we
     // generate a response.
-    let responses = messages.map(move |message| match Request::parse(&message) {
+    let responses = messages.map(move |message| match Request::parse(&message, &mut sql) {
         Ok(req) => req,
-        Err(e) => return Response::Error { msg: e },
+        Err(e) => return Response::Error { msg: format!("{}", e) },
     });
 
     // At this point `responses` is a stream of `Response` types which we

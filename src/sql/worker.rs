@@ -3,6 +3,7 @@ use crate::component::database::DatabaseError;
 use crate::component::table::Table;
 use std::fmt;
 
+#[derive(Debug)]
 pub struct SQL {
     pub username: String,
     pub database: Database,
