@@ -1134,15 +1134,29 @@ mod tests {
         let mut aff_table = Table::new("Affiliates");
         aff_table.fields.insert(
             "AffID".to_string(),
-            Field::new_all("AffID", DataType::Int, true, None, field::Checker::None),
+            Field::new_all("AffID", DataType::Int, true, None, field::Checker::None, false),
         );
         aff_table.fields.insert(
             "AffName".to_string(),
-            Field::new_all("AffName", DataType::Varchar(40), true, None, field::Checker::None),
+            Field::new_all(
+                "AffName",
+                DataType::Varchar(40),
+                true,
+                None,
+                field::Checker::None,
+                false,
+            ),
         );
         aff_table.fields.insert(
             "AffEmail".to_string(),
-            Field::new_all("AffEmail", DataType::Varchar(50), true, None, field::Checker::None),
+            Field::new_all(
+                "AffEmail",
+                DataType::Varchar(50),
+                true,
+                None,
+                field::Checker::None,
+                false,
+            ),
         );
         aff_table.fields.insert(
             "AffPhoneNum".to_string(),
@@ -1152,6 +1166,7 @@ mod tests {
                 false,
                 Some("+886900000000".to_string()),
                 field::Checker::None,
+                false,
             ),
         );
         aff_table.primary_key.push("AffID".to_string());
@@ -1161,11 +1176,18 @@ mod tests {
         let mut htl_table = Table::new("Hotels");
         htl_table.fields.insert(
             "HotelID".to_string(),
-            Field::new_all("HotelID", DataType::Int, true, None, field::Checker::None),
+            Field::new_all("HotelID", DataType::Int, true, None, field::Checker::None, false),
         );
         htl_table.fields.insert(
             "HotelName".to_string(),
-            Field::new_all("HotelName", DataType::Varchar(40), true, None, field::Checker::None),
+            Field::new_all(
+                "HotelName",
+                DataType::Varchar(40),
+                true,
+                None,
+                field::Checker::None,
+                false,
+            ),
         );
         htl_table.fields.insert(
             "HotelType".to_string(),
@@ -1175,6 +1197,7 @@ mod tests {
                 false,
                 Some("Homestay".to_string()),
                 field::Checker::None,
+                false,
             ),
         );
         htl_table.fields.insert(
@@ -1185,6 +1208,7 @@ mod tests {
                 false,
                 Some("".to_string()),
                 field::Checker::None,
+                false,
             ),
         );
         htl_table.primary_key.push("HotelID".to_string());
@@ -1321,15 +1345,29 @@ mod tests {
         let mut aff_table = Table::new("Affiliates");
         aff_table.fields.insert(
             "AffID".to_string(),
-            Field::new_all("AffID", DataType::Int, true, None, field::Checker::None),
+            Field::new_all("AffID", DataType::Int, true, None, field::Checker::None, false),
         );
         aff_table.fields.insert(
             "AffName".to_string(),
-            Field::new_all("AffName", DataType::Varchar(40), true, None, field::Checker::None),
+            Field::new_all(
+                "AffName",
+                DataType::Varchar(40),
+                true,
+                None,
+                field::Checker::None,
+                false,
+            ),
         );
         aff_table.fields.insert(
             "AffEmail".to_string(),
-            Field::new_all("AffEmail", DataType::Varchar(50), true, None, field::Checker::None),
+            Field::new_all(
+                "AffEmail",
+                DataType::Varchar(50),
+                true,
+                None,
+                field::Checker::None,
+                false,
+            ),
         );
         aff_table.fields.insert(
             "AffPhoneNum".to_string(),
@@ -1339,6 +1377,7 @@ mod tests {
                 false,
                 Some("+886900000000".to_string()),
                 field::Checker::None,
+                false,
             ),
         );
         aff_table.primary_key.push("AffID".to_string());

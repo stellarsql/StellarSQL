@@ -127,6 +127,9 @@ pub enum Token {
 
     /* Any Identifier */
     Identifier,
+
+    /* Define by StellarSQL */
+    Encrypt,
 }
 
 pub fn sym(name: &str, token: Token, group: Group) -> Symbol {
@@ -242,6 +245,9 @@ lazy_static! {
         m.insert("and", sym("and", Token::AND, Group::Operator));
         m.insert("not", sym("not", Token::NOT, Group::Operator));
         m.insert("or", sym("or", Token::OR, Group::Operator));
+
+        /* StellarSQL */
+        m.insert("encrypt", sym("encrypt", Token::Encrypt, Group::Keyword));
 
         m //return m
     };

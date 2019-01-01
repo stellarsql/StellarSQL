@@ -7,6 +7,7 @@ pub struct Field {
     pub not_null: bool,
     pub default: Option<String>,
     pub check: Checker,
+    pub encrypt: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,16 +34,25 @@ impl Field {
             not_null: false,
             default: None,
             check: Checker::None,
+            encrypt: false,
         }
     }
 
-    pub fn new_all(name: &str, datatype: DataType, not_null: bool, default: Option<String>, check: Checker) -> Field {
+    pub fn new_all(
+        name: &str,
+        datatype: DataType,
+        not_null: bool,
+        default: Option<String>,
+        check: Checker,
+        encrypt: bool,
+    ) -> Field {
         Field {
             name: name.to_string(),
             datatype,
             not_null,
             default,
             check,
+            encrypt,
         }
     }
 }

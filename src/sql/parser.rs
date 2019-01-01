@@ -188,6 +188,10 @@ fn parser_create_table(iter: &mut Peekable<Iter<Symbol>>) -> Result<Table, Parse
                             // TODO: handle check syntax. Do not use `check` in sql now.
                             return Err(ParserError::SyntaxError(String::from("check syntax error")));
                         }
+                        Some(s) if s.token == Token::Encrypt => {
+                            iter.next();
+                            field.encrypt = true;
+                        }
                         // end of table block
                         Some(s) if s.token == Token::ParentRight => break,
                         Some(_) | None => return Err(ParserError::SyntaxError(String::from(""))),
@@ -538,7 +542,7 @@ mod tests {
         assert!(table.fields.contains_key("b1"));
         assert!(table.fields.contains_key("c1"));
 
-        let query = "create table t1 (a1 int not null default 5, b1 char(7) not null, c1 double default 1.2);";
+        let query = "create table t1 (a1 int not null default 5 encrypt, b1 char(7) not null, c1 double default 1.2);";
         let parser = Parser::new(query).unwrap();
         parser.parse(&mut sql).unwrap();
 
@@ -549,6 +553,7 @@ mod tests {
         let c1 = table.fields.get("c1").unwrap();
         assert_eq!(a1.not_null, true);
         assert_eq!(a1.default.clone().unwrap(), "5");
+        assert_eq!(a1.encrypt, true);
         assert_eq!(b1.not_null, true);
         assert_eq!(c1.default.clone().unwrap(), "1.2");
     }

@@ -156,6 +156,7 @@ mod tests {
                 true,                    // not_null is true
                 Some("123".to_string()), // default is 123
                 field::Checker::None,
+                false,
             ),
         );
         table.fields.insert(
@@ -166,6 +167,7 @@ mod tests {
                 true, // not_null is true
                 None, // no default
                 field::Checker::None,
+                false,
             ),
         );
         table.fields.insert(
@@ -176,6 +178,7 @@ mod tests {
                 false, // not null is false
                 None,  // no default
                 field::Checker::None,
+                false,
             ),
         );
 
