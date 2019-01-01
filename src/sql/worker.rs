@@ -1,12 +1,14 @@
 use crate::component::database::Database;
 use crate::component::database::DatabaseError;
 use crate::component::table::Table;
+use crate::sql::query::QueryData;
 use std::fmt;
 
 #[derive(Debug)]
 pub struct SQL {
     pub username: String,
     pub database: Database,
+    pub querydata: QueryData,
 }
 
 #[derive(Debug)]
@@ -29,6 +31,7 @@ impl SQL {
         Ok(SQL {
             username: username.to_string(),
             database: Database::new(""), // empty db
+            querydata: QueryData::new(),
         })
     }
 

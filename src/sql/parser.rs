@@ -198,12 +198,9 @@ impl Parser {
 
                     Ok(())
                 }
-                Token::InsertInto => {
+                Token::Select => {
                     debug!("-> select table");
-                    let (table_name, attrs, rows) = parser_insert_into_table(&mut iter)?;
-                    sql.insert_into_table(&table_name, attrs, rows)
-                        .map_err(|e| ParserError::SQLError(e))?;
-
+                    sql.querydata = parse_select(&mut iter)?;
                     Ok(())
                 }
                 _ => {
@@ -260,6 +257,65 @@ fn parser_insert_into_table(
 
     assert_token(iter.next(), Token::Semicolon)?;
     Ok((table_name, attrs, rows))
+}
+
+/// Parse select query
+///
+/// Syntax:
+/// ```
+///     SELECT   f1, f2
+///     FROM     t1, t2
+///     WHERE    predicate
+///     GROUP BY f1, f2
+///     ORDER BY f1 DES, f2 ASC
+/// ```
+#[inline]
+fn parse_select(iter: &mut Peekable<Iter<Symbol>>) -> Result<QueryData, ParserError> {
+    let _ = iter.next(); // select
+
+    let mut query_data = QueryData::new();
+
+    query_data.fields = get_id_list(iter, false)?;
+
+    assert_token(iter.next(), Token::From)?;
+
+    query_data.tables = get_id_list(iter, false)?;
+
+    match iter.peek() {
+        Some(s) if s.token == Token::Where => {
+            let _ = iter.next();
+            let mut symbols: Vec<&Symbol> = vec![];
+            loop {
+                match iter.peek() {
+                    Some(s)
+                        if s.token == Token::GroupBy || s.token == Token::OrderBy || s.token == Token::Semicolon =>
+                    {
+                        break
+                    }
+                    Some(_) => symbols.push(iter.next().unwrap()),
+                    None => break,
+                }
+            }
+            query_data.predicate = Some(parse_predicate(symbols)?);
+        }
+        Some(_) | None => {}
+    }
+
+    match iter.peek() {
+        Some(s) if s.token == Token::GroupBy => {
+            // TODO:
+        }
+        Some(_) | None => {}
+    }
+
+    match iter.peek() {
+        Some(s) if s.token == Token::OrderBy => {
+            // TODO:
+        }
+        Some(_) | None => {}
+    }
+
+    Ok(query_data)
 }
 
 /// Parse a predicate as a tree
@@ -447,6 +503,7 @@ fn assert_token(sym: Option<&Symbol>, token: Token) -> Result<(), ParserError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sql::query::*;
     use env_logger;
 
     fn fake_sql() -> SQL {
@@ -678,6 +735,20 @@ mod tests {
         let query = "not (a1 >= 3 and b3 <= 7) or not (c1 = 4 and d1 = 3);";
         let answer = "not a1 >= 3 and b3 <= 7 or not c1 = 4 and d1 = 3 ;"; // a space before `;` is required
         assert_parse_predicate(query, answer);
+    }
+
+    #[test]
+    fn test_parser_select() {
+        let query = "select t1.a1, t1.a2, t1.a3 from t1, t2 where t1.a1 > 4 and t1.a1 = t2.a1;";
+        let mut sql = fake_sql();
+        let parser = Parser::new(query).unwrap();
+        parser.parse(&mut sql).unwrap();
+
+        assert_eq!(
+            sql.querydata.fields,
+            vec![String::from("t1.a1"), String::from("t1.a2"), String::from("t1.a3")]
+        );
+        assert_eq!(sql.querydata.tables, vec![String::from("t1"), String::from("t2")]);
     }
 
 }
