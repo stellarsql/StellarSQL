@@ -1,3 +1,6 @@
+//! # StellarSQL
+//! A minimal SQL DBMS written in Rust
+//!
 #[macro_use]
 extern crate clap;
 #[macro_use]
@@ -26,6 +29,9 @@ use env_logger;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 
+/// The entry of the program
+///
+/// Use `Tokio` to handle each TCP connection and spawn a thread to handle the request.
 fn main() {
     info!("Hello, StellarSQL!");
 
@@ -69,6 +75,9 @@ fn main() {
     tokio::run(server);
 }
 
+/// Process the TCP socket connection
+///
+/// The request message pass to [`Response`](connection/request/index.html) and get [`Response`](connection/response/index.html)
 fn process(socket: TcpStream) {
     let (reader, writer) = socket.split();
 
