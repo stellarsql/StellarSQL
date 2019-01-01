@@ -68,6 +68,14 @@ cargo build
 cargo test
 ```
 
+## Document
+
+Build and open the document at localhost
+
+```sh
+cargo rustdoc --open -- --document-private-items
+```
+
 ## License
 
 MIT
