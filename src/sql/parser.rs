@@ -73,121 +73,8 @@ impl Parser {
                 }
                 Token::CreateTable => {
                     debug!("-> create table");
-                    let _ = iter.next();
-
-                    let table_name_sym = iter
-                        .next()
-                        .ok_or(ParserError::SyntaxError(String::from("no table name")))?;
-                    check_id(table_name_sym)?;
-
-                    let table_name = table_name_sym.name.clone();
-                    debug!("   - table name: {}", table_name);
-
-                    assert_token(iter.next(), Token::ParentLeft)?;
-
-                    // create table.
-                    let mut table = Table::new(&table_name);
-                    loop {
-                        debug!("   -- new field:");
-
-                        let mut field;
-
-                        match iter.peek() {
-                            // setting a field
-                            Some(s) if s.group == Group::Identifier => {
-                                // 1. column
-                                let var_name = iter
-                                    .next()
-                                    .ok_or(ParserError::SyntaxError(String::from("miss column name")))?
-                                    .name
-                                    .clone();
-                                debug!("   --- field name: {}", var_name);
-
-                                // 2. datatype
-                                let var_type_sym = iter
-                                    .next()
-                                    .ok_or(ParserError::SyntaxError(String::from("miss column type")))?;
-                                debug!("   --- field type: {}", var_type_sym.name);
-
-                                // 2.1 case: varchar, char
-                                if var_type_sym.token == Token::Varchar || var_type_sym.token == Token::Char {
-                                    assert_token(iter.next(), Token::ParentLeft)?;
-
-                                    let varchar_len_str = iter
-                                        .next()
-                                        .ok_or(ParserError::SyntaxError(String::from("miss column type length")))?
-                                        .name
-                                        .clone();
-                                    let varchar_len = varchar_len_str
-                                        .parse::<u8>()
-                                        .map_err(|_| ParserError::SyntaxError(String::from("type length invalid")))?;
-                                    debug!("   --- field type length: {}", varchar_len);
-
-                                    let datatype = DataType::get(&var_type_sym.name, Some(varchar_len))
-                                        .ok_or(ParserError::SyntaxError(String::from("invalid type")))?;
-                                    field = Field::new(&var_name, datatype);
-
-                                    assert_token(iter.next(), Token::ParentRight)?;
-
-                                // 2.2 case: other type
-                                } else {
-                                    let datatype = DataType::get(&var_type_sym.name, None)
-                                        .ok_or(ParserError::SyntaxError(String::from("invalid type")))?;
-                                    field = Field::new(&var_name, datatype);
-                                }
-                                // 3. column properties
-                                loop {
-                                    match iter.peek() {
-                                        Some(s) if s.token == Token::Comma => {
-                                            iter.next();
-                                            debug!("   go next field");
-                                            break;
-                                        }
-                                        Some(s) if s.token == Token::NotNull => {
-                                            iter.next();
-                                            field.not_null = true
-                                        }
-                                        Some(s) if s.token == Token::Default => {
-                                            iter.next();
-                                            let default_value = iter
-                                                .next()
-                                                .ok_or(ParserError::SyntaxError(String::from("miss default value")))?
-                                                .name
-                                                .clone();
-                                            field.default = Some(default_value);
-                                        }
-                                        Some(s) if s.token == Token::Check => {
-                                            // TODO: handle check syntax. Do not use `check` in sql now.
-                                            return Err(ParserError::SyntaxError(String::from("check syntax error")));
-                                        }
-                                        // end of table block
-                                        Some(s) if s.token == Token::ParentRight => break,
-                                        Some(_) | None => return Err(ParserError::SyntaxError(String::from(""))),
-                                    }
-                                }
-                            }
-
-                            // setting table properties
-                            Some(s) if s.group == Group::Keyword => {
-                                // TODO: primary key, foreign key & reference
-                                return Err(ParserError::SyntaxError(String::from("")));
-                            }
-
-                            // finish table block
-                            Some(s) if s.token == Token::ParentRight => {
-                                debug!("   - fields setting done.");
-                                break;
-                            }
-
-                            Some(_) | None => return Err(ParserError::SyntaxError(String::from(""))),
-                        }
-
-                        table.insert_new_field(field);
-                        debug!("   - insert new field into table");
-                    }
-
+                    let table = parser_create_table(&mut iter)?;
                     sql.create_table(&table).map_err(|e| ParserError::SQLError(e))?;
-
                     return Ok(());
                 }
                 Token::InsertInto => {
@@ -195,7 +82,6 @@ impl Parser {
                     let (table_name, attrs, rows) = parser_insert_into_table(&mut iter)?;
                     sql.insert_into_table(&table_name, attrs, rows)
                         .map_err(|e| ParserError::SQLError(e))?;
-
                     Ok(())
                 }
                 Token::Select => {
@@ -214,7 +100,123 @@ impl Parser {
     }
 }
 
-#[inline]
+fn parser_create_table(iter: &mut Peekable<Iter<Symbol>>) -> Result<Table, ParserError> {
+    let _ = iter.next();
+
+    let table_name_sym = iter
+        .next()
+        .ok_or(ParserError::SyntaxError(String::from("no table name")))?;
+    check_id(table_name_sym)?;
+
+    let table_name = table_name_sym.name.clone();
+    debug!("   - table name: {}", table_name);
+
+    assert_token(iter.next(), Token::ParentLeft)?;
+
+    // create table.
+    let mut table = Table::new(&table_name);
+    loop {
+        debug!("   -- new field:");
+
+        let mut field;
+
+        match iter.peek() {
+            // setting a field
+            Some(s) if s.group == Group::Identifier => {
+                // 1. column
+                let var_name = iter
+                    .next()
+                    .ok_or(ParserError::SyntaxError(String::from("miss column name")))?
+                    .name
+                    .clone();
+                debug!("   --- field name: {}", var_name);
+
+                // 2. datatype
+                let var_type_sym = iter
+                    .next()
+                    .ok_or(ParserError::SyntaxError(String::from("miss column type")))?;
+                debug!("   --- field type: {}", var_type_sym.name);
+
+                // 2.1 case: varchar, char
+                if var_type_sym.token == Token::Varchar || var_type_sym.token == Token::Char {
+                    assert_token(iter.next(), Token::ParentLeft)?;
+
+                    let varchar_len_str = iter
+                        .next()
+                        .ok_or(ParserError::SyntaxError(String::from("miss column type length")))?
+                        .name
+                        .clone();
+                    let varchar_len = varchar_len_str
+                        .parse::<u8>()
+                        .map_err(|_| ParserError::SyntaxError(String::from("type length invalid")))?;
+                    debug!("   --- field type length: {}", varchar_len);
+
+                    let datatype = DataType::get(&var_type_sym.name, Some(varchar_len))
+                        .ok_or(ParserError::SyntaxError(String::from("invalid type")))?;
+                    field = Field::new(&var_name, datatype);
+
+                    assert_token(iter.next(), Token::ParentRight)?;
+
+                // 2.2 case: other type
+                } else {
+                    let datatype = DataType::get(&var_type_sym.name, None)
+                        .ok_or(ParserError::SyntaxError(String::from("invalid type")))?;
+                    field = Field::new(&var_name, datatype);
+                }
+                // 3. column properties
+                loop {
+                    match iter.peek() {
+                        Some(s) if s.token == Token::Comma => {
+                            iter.next();
+                            debug!("   go next field");
+                            break;
+                        }
+                        Some(s) if s.token == Token::NotNull => {
+                            iter.next();
+                            field.not_null = true
+                        }
+                        Some(s) if s.token == Token::Default => {
+                            iter.next();
+                            let default_value = iter
+                                .next()
+                                .ok_or(ParserError::SyntaxError(String::from("miss default value")))?
+                                .name
+                                .clone();
+                            field.default = Some(default_value);
+                        }
+                        Some(s) if s.token == Token::Check => {
+                            // TODO: handle check syntax. Do not use `check` in sql now.
+                            return Err(ParserError::SyntaxError(String::from("check syntax error")));
+                        }
+                        // end of table block
+                        Some(s) if s.token == Token::ParentRight => break,
+                        Some(_) | None => return Err(ParserError::SyntaxError(String::from(""))),
+                    }
+                }
+            }
+
+            // setting table properties
+            Some(s) if s.group == Group::Keyword => {
+                // TODO: primary key, foreign key & reference
+                return Err(ParserError::SyntaxError(String::from("")));
+            }
+
+            // finish table block
+            Some(s) if s.token == Token::ParentRight => {
+                debug!("   - fields setting done.");
+                break;
+            }
+
+            Some(_) | None => return Err(ParserError::SyntaxError(String::from(""))),
+        }
+
+        table.insert_new_field(field);
+        debug!("   - insert new field into table");
+    }
+
+    Ok(table)
+}
+
 fn parser_insert_into_table(
     iter: &mut Peekable<Iter<Symbol>>,
 ) -> Result<(String, Vec<String>, Vec<Vec<String>>), ParserError> {
