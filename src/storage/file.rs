@@ -1,5 +1,3 @@
-use crate::component::datatype::DataType;
-use crate::component::field;
 use crate::component::field::Field;
 use crate::component::table::Row;
 use crate::component::table::Table;
@@ -117,6 +115,7 @@ impl fmt::Display for FileError {
     }
 }
 
+#[allow(dead_code)]
 impl File {
     pub fn create_username(username: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
         // determine file base path
@@ -884,6 +883,8 @@ impl File {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::component::datatype::DataType;
+    use crate::component::field;
     #[test]
     pub fn test_create_username() {
         let file_base_path = "data1";

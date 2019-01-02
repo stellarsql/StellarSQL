@@ -1,5 +1,3 @@
-use crate::component::datatype::DataType;
-use crate::component::field;
 use crate::component::field::Field;
 use crate::storage::file::File;
 use crate::storage::file::FileError;
@@ -80,6 +78,7 @@ impl Table {
     }
 
     /// Load a table with meta data
+    #[allow(dead_code)]
     pub fn load_meta(username: &str, db_name: &str, table_name: &str) -> Result<Table, TableError> {
         let meta =
             File::load_table_meta(username, db_name, table_name, None).map_err(|e| TableError::CausedByFile(e))?;
@@ -144,6 +143,8 @@ impl Table {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::component::datatype::DataType;
+    use crate::component::field;
 
     #[test]
     fn test_insert_row() {

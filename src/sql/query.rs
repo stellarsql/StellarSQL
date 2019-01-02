@@ -29,6 +29,7 @@ impl QueryData {
 }
 
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 pub enum SortDirection {
     Asc,
     Desc,

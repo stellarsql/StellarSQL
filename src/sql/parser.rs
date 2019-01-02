@@ -405,6 +405,7 @@ fn parse_postfix_tree(symbols: Vec<&Symbol>) -> Result<Box<Node>, ParserError> {
 }
 
 /// in order traversal
+#[allow(dead_code)]
 fn in_order(node: Box<Node>, vec: &mut Vec<String>) {
     if node.left.is_some() {
         in_order(node.left.unwrap(), vec);
@@ -416,6 +417,7 @@ fn in_order(node: Box<Node>, vec: &mut Vec<String>) {
 }
 
 /// parse predicate tokens from infix to postfix
+#[allow(unused_assignments)]
 fn parse_infix_postfix(symbols: Vec<&Symbol>) -> Result<Vec<&Symbol>, ParserError> {
     let mut iter = symbols.iter();
     let mut stack: Vec<&Symbol> = vec![];

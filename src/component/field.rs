@@ -38,6 +38,7 @@ impl Field {
         }
     }
 
+    #[allow(dead_code)]
     pub fn new_all(
         name: &str,
         datatype: DataType,

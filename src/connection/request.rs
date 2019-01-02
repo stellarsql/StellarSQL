@@ -13,7 +13,7 @@ pub enum RequestError {
     SQLError(SQLError),
     CauseByParser(ParserError),
     UserNotExist(String),
-    DBNotExist(String),
+    // DBNotExist(String),
     CreateDBBeforeCmd,
     BadRequest,
 }
@@ -24,7 +24,7 @@ impl fmt::Display for RequestError {
             RequestError::SQLError(ref e) => write!(f, "error caused by worker: {}", e),
             RequestError::CauseByParser(ref e) => write!(f, "error caused by parser: {}", e),
             RequestError::UserNotExist(ref s) => write!(f, "user: {} not found", s),
-            RequestError::DBNotExist(ref s) => write!(f, "database: {} not found", s),
+            // RequestError::DBNotExist(ref s) => write!(f, "database: {} not found", s),
             RequestError::CreateDBBeforeCmd => write!(f, "please create a database before any other commands"),
             RequestError::BadRequest => write!(f, "BadRequest, invalid request format"),
         }
@@ -41,7 +41,7 @@ impl Request {
          * username||||create dbname;
          *
          */
-        let mut split_str: Vec<&str> = input.split("||").collect();
+        let split_str: Vec<&str> = input.split("||").collect();
         if split_str.len() != 3 {
             return Err(RequestError::BadRequest);
         }
@@ -65,13 +65,13 @@ impl Request {
             if sql.database.name == "" {
                 match sql.load_database(dbname) {
                     Err(ret) => return Err(RequestError::SQLError(ret)),
-                    Ok(e) => {}
+                    Ok(_) => {}
                 }
             }
             let parser = Parser::new(&cmd).unwrap();
             match parser.parse(&mut sql) {
                 Err(ret) => return Err(RequestError::CauseByParser(ret)),
-                Ok(e) => {}
+                Ok(_) => {}
             }
         } else {
             // check cmd if it is "create database dbname;"
@@ -82,7 +82,7 @@ impl Request {
             let parser = Parser::new(&cmd).unwrap();
             match parser.parse(&mut sql) {
                 Err(ret) => return Err(RequestError::CauseByParser(ret)),
-                Ok(e) => {}
+                Ok(_) => {}
             }
         }
         Ok(Response::OK {

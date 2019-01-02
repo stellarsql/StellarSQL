@@ -1,3 +1,3 @@
-fn write() {}
+// fn write() {}
 
-fn read() {}
+// fn read() {}

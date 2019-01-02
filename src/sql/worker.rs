@@ -60,7 +60,7 @@ impl SQL {
         attrs: Vec<String>,
         rows: Vec<Vec<String>>,
     ) -> Result<(), SQLError> {
-        let mut table = self
+        let table = self
             .database
             .tables
             .get_mut(table_name)
