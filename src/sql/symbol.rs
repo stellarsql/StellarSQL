@@ -13,7 +13,7 @@ pub enum Group {
     DataType,
     Function,
     Keyword,
-    Operator,   // >, >=, =, !=, <, <=
+    Operator,   // >, >=, =, !=, <>, <, <=
     Identifier, // t1, a, b
     Delimiter,  // `,`, (, )
 }
@@ -68,20 +68,18 @@ pub enum Token {
     InsertInto,
     IsNull,
     IsNotNull,
-    Join,
     LeftJoin,
     Like,
     Limit,
     NotNull,
     OrderBy,
     OuterJoin,
+    Percent,
     PrimaryKey,
     Procedure,
     RightJoin,
     Rownum,
     Select,
-    SelectDistinct,
-    SelectTop,
     Set,
     Table,
     Top,
@@ -112,7 +110,7 @@ pub enum Token {
     LT, // <
     LE, // <=
     EQ, // =
-    NE, // !=
+    NE, // !=, <>
     GT, // >
     GE, // >=
     AND,
@@ -195,20 +193,18 @@ lazy_static! {
         m.insert("insert into", sym("insert into", Token::InsertInto, Group::Keyword));
         m.insert("is null", sym("is null", Token::IsNull, Group::Keyword));
         m.insert("is not null", sym("is not null", Token::IsNotNull, Group::Keyword));
-        m.insert("join", sym("join", Token::Join, Group::Keyword));
         m.insert("left join", sym("left join", Token::LeftJoin, Group::Keyword));
         m.insert("like", sym("like", Token::Like, Group::Keyword));
         m.insert("limit", sym("limit", Token::Limit, Group::Keyword));
         m.insert("not null", sym("not null", Token::NotNull, Group::Keyword));
         m.insert("order by", sym("order by", Token::OrderBy, Group::Keyword));
         m.insert("outer join", sym("outer join", Token::OuterJoin, Group::Keyword));
+        m.insert("percent", sym("percent", Token::Percent, Group::Keyword));
         m.insert("primary key", sym("primary key", Token::PrimaryKey, Group::Keyword));
         m.insert("procedure", sym("procedure", Token::Procedure, Group::Keyword));
         m.insert("right join", sym("right join", Token::RightJoin, Group::Keyword));
         m.insert("rownum", sym("rownum", Token::Rownum, Group::Keyword));
         m.insert("select", sym("select", Token::Select, Group::Keyword));
-        m.insert("select distinct", sym("select distinct", Token::SelectDistinct, Group::Keyword));
-        m.insert("select top", sym("select top", Token::SelectTop, Group::Keyword));
         m.insert("set", sym("set", Token::Set, Group::Keyword));
         m.insert("table", sym("table", Token::Table, Group::Keyword));
         m.insert("top", sym("top", Token::Top, Group::Keyword));
@@ -240,6 +236,7 @@ lazy_static! {
         m.insert(">=", sym(">=", Token::GE, Group::Operator));
         m.insert("=", sym("=", Token::EQ, Group::Operator));
         m.insert("!=", sym("!=", Token::NE, Group::Operator));
+        m.insert("<>", sym("<>", Token::NE, Group::Operator));
         m.insert("<", sym("<", Token::LT, Group::Operator));
         m.insert("<=", sym("<=", Token::LE, Group::Operator));
         m.insert("and", sym("and", Token::AND, Group::Operator));
