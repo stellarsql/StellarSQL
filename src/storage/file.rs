@@ -1,11 +1,17 @@
+extern crate byteorder;
+
+use crate::component::datatype::DataType;
+use crate::component::field;
 use crate::component::field::Field;
 use crate::component::table::Row;
 use crate::component::table::Table;
+use byteorder::{BigEndian, WriteBytesExt};
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
 use std::io::{BufRead, BufReader, Write};
+use std::num;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -33,7 +39,12 @@ pub enum FileError {
     JsonParse,
     RangeContainsDeletedRecord,
     RangeExceedLatestRecord,
+    ParseIntError,
+    ParseFloatError,
+    StringLengthError,
 }
+
+// structure of `usernames.json`
 
 #[derive(Debug, Serialize, Deserialize)]
 struct UsernamesJson {
@@ -46,6 +57,8 @@ struct UsernameInfo {
     path: String,
 }
 
+// structure of `dbs.json`
+
 #[derive(Debug, Serialize, Deserialize)]
 struct DbsJson {
     dbs: Vec<DbInfo>,
@@ -56,6 +69,8 @@ struct DbInfo {
     name: String,
     path: String,
 }
+
+// structure of `tables.json`
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TablesJson {
@@ -88,6 +103,18 @@ impl From<serde_json::Error> for FileError {
     }
 }
 
+impl From<num::ParseIntError> for FileError {
+    fn from(_err: num::ParseIntError) -> FileError {
+        FileError::ParseIntError
+    }
+}
+
+impl From<num::ParseFloatError> for FileError {
+    fn from(_err: num::ParseFloatError) -> FileError {
+        FileError::ParseFloatError
+    }
+}
+
 impl fmt::Display for FileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -112,6 +139,11 @@ impl fmt::Display for FileError {
             FileError::RangeExceedLatestRecord => {
                 write!(f, "The range of rows to fetch exceeds the latest record on the table.")
             }
+            FileError::ParseIntError => write!(f, "Error occurred during parsing value from Int data type."),
+            FileError::ParseFloatError => {
+                write!(f, "Error occurred during parsing value from Float or Double data type.")
+            }
+            FileError::StringLengthError => write!(f, "The string attempt to store exceed the size of field."),
         }
     }
 }
@@ -616,6 +648,23 @@ impl File {
         let mut table_tsv_file = fs::OpenOptions::new().append(true).open(table_tsv_path)?;
         table_tsv_file.write_all(chunk.as_bytes())?;
 
+        // create chunk of bytes to be inserted
+        let mut chunk_bytes = vec![];
+        for row in rows {
+            // set `__valid__` to 1
+            let mut row_bytes = vec![1];
+            for attr in table_meta_target.attrs_order[1..].iter() {
+                let attr_bytes = File::to_bytes(&table_meta_target.attrs[attr].datatype, row.0.get(attr).unwrap())?;
+                row_bytes.extend_from_slice(&attr_bytes);
+            }
+            chunk_bytes.extend_from_slice(&row_bytes);
+        }
+
+        // append chunk of bytes to table bin
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let mut table_bin_file = fs::OpenOptions::new().append(true).open(table_bin_path)?;
+        table_bin_file.write_all(&chunk_bytes)?;
+
         Ok(())
     }
 
@@ -921,6 +970,31 @@ impl File {
             DataType::Int => 4,
             DataType::Varchar(length) => length.clone() as u32,
         }
+    }
+
+    fn to_bytes(datatype: &DataType, str_val: &str) -> Result<Vec<u8>, FileError> {
+        let mut bs: Vec<u8> = vec![];
+        match datatype {
+            DataType::Char(length) => {
+                if str_val.len() > *length as usize {
+                    return Err(FileError::StringLengthError);
+                }
+                bs.extend_from_slice(str_val.as_bytes());
+                bs.extend_from_slice(&vec![0; *length as usize - str_val.len()])
+            }
+            DataType::Double => bs.write_f64::<BigEndian>(str_val.parse::<f64>()?)?,
+            DataType::Float => bs.write_f32::<BigEndian>(str_val.parse::<f32>()?)?,
+            DataType::Int => bs.write_i32::<BigEndian>(str_val.parse::<i32>()?)?,
+            DataType::Varchar(length) => {
+                if str_val.len() > *length as usize {
+                    return Err(FileError::StringLengthError);
+                }
+                bs.extend_from_slice(str_val.as_bytes());
+                bs.extend_from_slice(&vec![0; *length as usize - str_val.len()])
+            }
+        }
+
+        Ok(bs)
     }
 }
 
