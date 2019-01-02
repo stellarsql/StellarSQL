@@ -1,3 +1,4 @@
 /target
 /data*
 **/*.rs.bk
+*.index

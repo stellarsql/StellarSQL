@@ -29,7 +29,7 @@ impl fmt::Display for IndexErr {
 pub struct TableMeta {
     table_name: String, // name of raw table
     key_type: String,   // type of primary key in raw table
-    key_offet: u32,     // byte position of first primary key in raw table
+    key_offset: u32,    // byte position of first primary key in raw table
     key_bytes: u32,     // bytes of primary key in raw table
     row_bytes: u32,     // bytes of each row in raw table
 }
@@ -60,14 +60,14 @@ pub enum IndexDataStructure {
     IndexString(IndexDataStructureString),
 }
 
-// build index table with raw table in whicj key type is int
+// build index table with raw table in which key type is int
 fn build_int_index_table(table_meta: &TableMeta) -> Result<(Vec<IndexDataStructureInt>), IndexErr> {
     let mut index_arr = IndexInt(vec![]);
     let mut row = 0;
     let mut bytes_to_slide = table_meta.row_bytes - table_meta.key_bytes;
     let table_name = table_meta.table_name.clone();
     let mut file = File::open(table_name).unwrap();
-    file.seek(SeekFrom::Start(table_meta.key_offet as u64));
+    file.seek(SeekFrom::Start(table_meta.key_offset as u64));
     let mut buffer = [0; 4];
     loop {
         let bytes_read = match file.read(&mut buffer) {
@@ -96,7 +96,7 @@ fn build_int_index_table(table_meta: &TableMeta) -> Result<(Vec<IndexDataStructu
 
 // write index table into index file
 fn write_int_index_table(table_meta: &TableMeta, index_arr: &Vec<IndexDataStructureInt>) -> Result<(), IndexErr> {
-    let table_index_name = table_meta.table_name.clone() + "index";
+    let table_index_name = format!("{}.index", table_meta.table_name);
     let mut file_write = File::create(table_index_name).unwrap();
     for i in 0..index_arr.len() {
         let row_temp = unsafe { mem::transmute::<u32, [u8; 4]>(index_arr[i].row) };
@@ -109,7 +109,7 @@ fn write_int_index_table(table_meta: &TableMeta, index_arr: &Vec<IndexDataStruct
 
 // read index table from index file
 fn read_int_index_table(table_meta: &TableMeta, index_arr: &mut Vec<IndexDataStructureInt>) -> Result<(), IndexErr> {
-    let table_index_name = table_meta.table_name.clone() + "index";
+    let table_index_name = format!("{}.index", table_meta.table_name);
     let mut file = File::open(table_index_name).unwrap();
     let mut buffer_row = [0; 4];
     let mut buffer_key = [0; 4];
@@ -161,7 +161,7 @@ fn build_string_index_table(table_meta: &TableMeta) -> Result<(Vec<IndexDataStru
     let mut bytes_to_slide = table_meta.row_bytes - table_meta.key_bytes;
     let table_name = table_meta.table_name.clone();
     let mut file = File::open(table_name).unwrap();
-    file.seek(SeekFrom::Start(table_meta.key_offet as u64));
+    file.seek(SeekFrom::Start(table_meta.key_offset as u64));
     let mut buffer = vec![0; table_meta.key_bytes as usize];
     loop {
         let bytes_read = match file.read(&mut buffer) {
@@ -186,7 +186,7 @@ fn build_string_index_table(table_meta: &TableMeta) -> Result<(Vec<IndexDataStru
 }
 
 fn write_string_index_table(table_meta: &TableMeta, index_arr: &Vec<IndexDataStructureString>) -> Result<(), IndexErr> {
-    let table_index_name = table_meta.table_name.clone() + "index";
+    let table_index_name = format!("{}.index", table_meta.table_name);
     let mut file_write = File::create(table_index_name).unwrap();
     for i in 0..index_arr.len() {
         let row_temp = unsafe { mem::transmute::<u32, [u8; 4]>(index_arr[i].row) };
@@ -200,7 +200,7 @@ fn read_string_index_table(
     table_meta: &TableMeta,
     index_arr: &mut Vec<IndexDataStructureString>,
 ) -> Result<(), IndexErr> {
-    let table_index_name = table_meta.table_name.clone() + "index";
+    let table_index_name = format!("{}.index", table_meta.table_name);
     let mut file = File::open(table_index_name).unwrap();
     let mut buffer_row = [0; 4];
     let mut buffer_key = vec![0; table_meta.key_bytes as usize];
@@ -289,9 +289,9 @@ mod tests {
     #[test]
     pub fn test_construct_index() {
         let table_meta = TableMeta {
-            table_name: String::from("test/1.in"),
+            table_name: String::from("test_data/1.in"),
             key_type: String::from("Int"),
-            key_offet: 0,
+            key_offset: 0,
             key_bytes: 4,
             row_bytes: 4,
         };
