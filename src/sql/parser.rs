@@ -5,6 +5,7 @@ use crate::sql::lexer::LexerError;
 use crate::sql::lexer::Scanner;
 use crate::sql::query::Node;
 use crate::sql::query::QueryData;
+use crate::sql::query::TopType;
 use crate::sql::symbol::Group;
 use crate::sql::symbol::Symbol;
 use crate::sql::symbol::Token;
@@ -268,18 +269,53 @@ fn parser_insert_into_table(
 /// Parse select query
 ///
 /// Syntax:
+///
+/// ```sql
+/// SELECT  DISTINCT  TOP <top_specification> <select_list>
+/// FROM <left_table>
+///      <join_type> JOIN <right_table>
+///      ON <join_condition>
+/// WHERE <where_condition>
+/// GROUP BY <group_by_list>
+/// WITH {CUBE | ROLLUP}
+/// HAVING <having_condition>
+/// ORDER BY <order_by_list>
 /// ```
-///     SELECT   f1, f2
-///     FROM     t1, t2
-///     WHERE    predicate
-///     GROUP BY f1, f2
-///     ORDER BY f1 DES, f2 ASC
-/// ```
+///
 #[inline]
 fn parse_select(iter: &mut Peekable<Iter<Symbol>>) -> Result<QueryData, ParserError> {
     let _ = iter.next(); // select
 
     let mut query_data = QueryData::new();
+
+    if check_token(iter.peek(), Token::Distinct) {
+        iter.next();
+        query_data.is_distinct = true;
+    }
+
+    if check_token(iter.peek(), Token::Top) {
+        iter.next(); // top
+
+        let top_spec = match iter.next() {
+            Some(s) => s.name.clone(),
+            None => return Err(ParserError::SyntaxError(String::from("invalid select top syntax"))),
+        };
+
+        if check_token(iter.peek(), Token::Percent) {
+            iter.next();
+            query_data.top = TopType::Percent(
+                top_spec
+                    .parse::<f32>()
+                    .map_err(|_| ParserError::SyntaxError(String::from("invalid select top syntax")))?,
+            );
+        } else {
+            query_data.top = TopType::Number(
+                top_spec
+                    .parse::<u32>()
+                    .map_err(|_| ParserError::SyntaxError(String::from("invalid select top syntax")))?,
+            );
+        }
+    }
 
     query_data.fields = get_id_list(iter, false)?;
 
@@ -307,18 +343,12 @@ fn parse_select(iter: &mut Peekable<Iter<Symbol>>) -> Result<QueryData, ParserEr
         Some(_) | None => {}
     }
 
-    match iter.peek() {
-        Some(s) if s.token == Token::GroupBy => {
-            // TODO:
-        }
-        Some(_) | None => {}
+    if check_token(iter.peek(), Token::GroupBy) {
+        // TODO:
     }
 
-    match iter.peek() {
-        Some(s) if s.token == Token::OrderBy => {
-            // TODO:
-        }
-        Some(_) | None => {}
+    if check_token(iter.peek(), Token::OrderBy) {
+        // TODO:
     }
 
     Ok(query_data)
@@ -493,7 +523,16 @@ fn check_id(sym: &Symbol) -> Result<(), ParserError> {
     Ok(())
 }
 
-/// Check if the symbol is the expected token.
+/// Check if the next symbol is the expected token.
+#[inline]
+fn check_token(sym: Option<&&Symbol>, token: Token) -> bool {
+    match sym {
+        Some(s) if s.token == token => true,
+        Some(_) | None => false,
+    }
+}
+
+/// Assert the symbol is the expected token.
 #[inline]
 fn assert_token(sym: Option<&Symbol>, token: Token) -> Result<(), ParserError> {
     if sym
@@ -745,7 +784,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parser_select() {
+    fn test_parser_select_field_table() {
         let query = "select t1.a1, t1.a2, t1.a3 from t1, t2 where t1.a1 > 4 and t1.a1 = t2.a1;";
         let mut sql = fake_sql();
         let parser = Parser::new(query).unwrap();
@@ -756,6 +795,30 @@ mod tests {
             vec![String::from("t1.a1"), String::from("t1.a2"), String::from("t1.a3")]
         );
         assert_eq!(sql.querydata.tables, vec![String::from("t1"), String::from("t2")]);
+    }
+
+    #[test]
+    fn test_parser_select_distinct_top() {
+        let mut sql = fake_sql();
+
+        let query = "select distinct top 5 t1.a1, t1.a2, t1.a3 from t1;";
+        let parser = Parser::new(query).unwrap();
+        parser.parse(&mut sql).unwrap();
+
+        assert_eq!(
+            sql.querydata.fields,
+            vec![String::from("t1.a1"), String::from("t1.a2"), String::from("t1.a3")]
+        );
+        assert_eq!(sql.querydata.tables, vec![String::from("t1")]);
+        assert_eq!(sql.querydata.top, TopType::Number(5));
+        assert_eq!(sql.querydata.is_distinct, true);
+
+        let query = "select top 50 percent a1, b1, c1 from t1;";
+        let parser = Parser::new(query).unwrap();
+        parser.parse(&mut sql).unwrap();
+
+        assert_eq!(sql.querydata.top, TopType::Percent(50.0));
+        assert_eq!(sql.querydata.is_distinct, false);
     }
 
 }

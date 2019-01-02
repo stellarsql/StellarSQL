@@ -8,6 +8,8 @@ pub struct QueryData {
     pub aggregation_fn: Vec<String>,
     pub sort_fields: Vec<String>,
     pub sort_dir: SortDirection,
+    pub is_distinct: bool,
+    pub top: TopType,
 }
 
 impl QueryData {
@@ -20,14 +22,23 @@ impl QueryData {
             aggregation_fn: vec![],
             sort_fields: vec![],
             sort_dir: SortDirection::None,
+            is_distinct: false,
+            top: TopType::None,
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SortDirection {
     Asc,
     Desc,
+    None,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TopType {
+    Percent(f32),
+    Number(u32),
     None,
 }
 
