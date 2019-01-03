@@ -289,33 +289,38 @@ pub fn check_multi_keywords_front(s: &str) -> Option<Vec<u32>> {
     }
 }
 
-/// Test if `SYMBOLS` initialize.
-#[test]
-fn test_symbols() {
-    let s = SYMBOLS.get("add").unwrap();
-    assert_eq!(s.name, "add");
-    assert_eq!(s.len, 3);
-    assert_eq!(s.token, Token::Add);
-    assert_eq!(s.group, Group::Keyword);
-    let s = SYMBOLS.get(">").unwrap();
-    assert_eq!(s.name, ">");
-    assert_eq!(s.len, 1);
-    assert_eq!(s.token, Token::GT);
-    assert_eq!(s.group, Group::Operator);
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_match_delimiter() {
-    let mut chs = "){".chars();
-    let x = chs.next().unwrap();
-    let s = Symbol::match_delimiter(x).unwrap();
-    assert_eq!(s.token, Token::ParentRight);
-    let x = chs.next().unwrap();
-    assert!(Symbol::match_delimiter(x).is_none());
-}
+    /// Test if `SYMBOLS` initialize.
+    #[test]
+    fn test_symbols() {
+        let s = SYMBOLS.get("add").unwrap();
+        assert_eq!(s.name, "add");
+        assert_eq!(s.len, 3);
+        assert_eq!(s.token, Token::Add);
+        assert_eq!(s.group, Group::Keyword);
+        let s = SYMBOLS.get(">").unwrap();
+        assert_eq!(s.name, ">");
+        assert_eq!(s.len, 1);
+        assert_eq!(s.token, Token::GT);
+        assert_eq!(s.group, Group::Operator);
+    }
 
-#[test]
-fn test_check_multi_keywords_front() {
-    assert_eq!(check_multi_keywords_front("alter"), Some(vec![2]));
-    assert!(check_multi_keywords_front("not_match").is_none());
+    #[test]
+    fn test_match_delimiter() {
+        let mut chs = "){".chars();
+        let x = chs.next().unwrap();
+        let s = Symbol::match_delimiter(x).unwrap();
+        assert_eq!(s.token, Token::ParentRight);
+        let x = chs.next().unwrap();
+        assert!(Symbol::match_delimiter(x).is_none());
+    }
+
+    #[test]
+    fn test_check_multi_keywords_front() {
+        assert_eq!(check_multi_keywords_front("alter"), Some(vec![2]));
+        assert!(check_multi_keywords_front("not_match").is_none());
+    }
 }
