@@ -1,6 +1,9 @@
+use crate::component::datatype::DataType;
 use crate::component::field::Field;
 use crate::component::table::Row;
 use crate::component::table::Table;
+use crate::storage::bytescoder;
+use crate::storage::bytescoder::BytesCoder;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
@@ -33,7 +36,10 @@ pub enum FileError {
     JsonParse,
     RangeContainsDeletedRecord,
     RangeExceedLatestRecord,
+    BytesError,
 }
+
+// structure of `usernames.json`
 
 #[derive(Debug, Serialize, Deserialize)]
 struct UsernamesJson {
@@ -46,6 +52,8 @@ struct UsernameInfo {
     path: String,
 }
 
+// structure of `dbs.json`
+
 #[derive(Debug, Serialize, Deserialize)]
 struct DbsJson {
     dbs: Vec<DbInfo>,
@@ -56,6 +64,8 @@ struct DbInfo {
     name: String,
     path: String,
 }
+
+// structure of `tables.json`
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TablesJson {
@@ -73,6 +83,7 @@ pub struct TableMeta {
     path_tsv: String,
     path_bin: String,
     attrs_order: Vec<String>,
+    attr_offset_ranges: Vec<Vec<u32>>,
 }
 
 impl From<io::Error> for FileError {
@@ -84,6 +95,12 @@ impl From<io::Error> for FileError {
 impl From<serde_json::Error> for FileError {
     fn from(_err: serde_json::Error) -> FileError {
         FileError::JsonParse
+    }
+}
+
+impl From<bytescoder::BytesCoderError> for FileError {
+    fn from(_err: bytescoder::BytesCoderError) -> FileError {
+        FileError::BytesError
     }
 }
 
@@ -111,6 +128,7 @@ impl fmt::Display for FileError {
             FileError::RangeExceedLatestRecord => {
                 write!(f, "The range of rows to fetch exceeds the latest record on the table.")
             }
+            FileError::BytesError => write!(f, "Error raised from BytesCoder."),
         }
     }
 }
@@ -380,6 +398,7 @@ impl File {
             reference_attr: table.reference_attr.clone(),
             attrs_order: vec![],
             attrs: table.fields.clone(),
+            attr_offset_ranges: vec![],
         };
 
         // determine storing order of attrs in .tsv and .bin
@@ -397,6 +416,22 @@ impl File {
         other_attrs.sort();
         new_table_meta.attrs_order.extend_from_slice(&other_attrs);
 
+        // determine the starting offset of each attribute in a row of bin file
+        new_table_meta.attr_offset_ranges = vec![vec![0, 1]];
+        let attr_sizes: Vec<u32> = new_table_meta.attrs_order[1..]
+            .iter()
+            .map(|attr_name| File::get_datatype_size(&new_table_meta.attrs[attr_name].datatype))
+            .collect();
+        // `__valid__` attr occupies 1 byte
+        let mut curr_offset = 1;
+
+        for attr_size in attr_sizes {
+            new_table_meta
+                .attr_offset_ranges
+                .push(vec![curr_offset, curr_offset + attr_size]);
+            curr_offset += attr_size;
+        }
+
         // create corresponding tsv for the table, with the title line
         let table_tsv_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_tsv);
         let mut table_tsv_file = fs::OpenOptions::new()
@@ -406,6 +441,16 @@ impl File {
             .truncate(true)
             .open(table_tsv_path)?;
         table_tsv_file.write_all(new_table_meta.attrs_order.join("\t").as_bytes())?;
+
+        // create corresponding bin for the table, which is empty
+        let table_bin_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_bin);
+        let mut table_bin_file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(table_bin_path)?;
+        table_bin_file.write_all("".as_bytes())?;
 
         // insert the new table record into `tables.json`
         tables_json.tables.push(new_table_meta);
@@ -524,6 +569,12 @@ impl File {
             fs::remove_file(&table_tsv_path)?;
         }
 
+        // remove corresponding bin file
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        if Path::new(&table_bin_path).exists() {
+            fs::remove_file(&table_bin_path)?;
+        }
+
         // overwrite `tables.json`
         let mut tables_file = fs::OpenOptions::new()
             .write(true)
@@ -581,6 +632,24 @@ impl File {
         let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
         let mut table_tsv_file = fs::OpenOptions::new().append(true).open(table_tsv_path)?;
         table_tsv_file.write_all(chunk.as_bytes())?;
+
+        // create chunk of bytes to be inserted
+        let mut chunk_bytes = vec![];
+        for row in rows {
+            // set `__valid__` to 1
+            let mut row_bytes = vec![1];
+            for attr in table_meta_target.attrs_order[1..].iter() {
+                let attr_bytes =
+                    BytesCoder::to_bytes(&table_meta_target.attrs[attr].datatype, row.0.get(attr).unwrap())?;
+                row_bytes.extend_from_slice(&attr_bytes);
+            }
+            chunk_bytes.extend_from_slice(&row_bytes);
+        }
+
+        // append chunk of bytes to table bin
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let mut table_bin_file = fs::OpenOptions::new().append(true).open(table_bin_path)?;
+        table_bin_file.write_all(&chunk_bytes)?;
 
         Ok(())
     }
@@ -877,6 +946,16 @@ impl File {
         }
 
         Ok(())
+    }
+
+    fn get_datatype_size(datatype: &DataType) -> u32 {
+        match datatype {
+            DataType::Char(length) => length.clone() as u32,
+            DataType::Double => 8,
+            DataType::Float => 4,
+            DataType::Int => 4,
+            DataType::Varchar(length) => length.clone() as u32,
+        }
     }
 }
 
@@ -1225,6 +1304,7 @@ mod tests {
                 reference_attr: None,
                 path_tsv: "Affiliates.tsv".to_string(),
                 path_bin: "Affiliates.bin".to_string(),
+                attr_offset_ranges: vec![vec![0, 1], vec![1, 5], vec![5, 55], vec![55, 95], vec![95, 115]],
                 // ignore attrs checking
                 attrs_order: vec![],
                 attrs: HashMap::new(),
@@ -1233,10 +1313,11 @@ mod tests {
                 name: "Hotels".to_string(),
                 primary_key: vec!["HotelID".to_string()],
                 foreign_key: vec![],
-                path_tsv: "Hotels.tsv".to_string(),
-                path_bin: "Hotels.bin".to_string(),
                 reference_table: None,
                 reference_attr: None,
+                path_tsv: "Hotels.tsv".to_string(),
+                path_bin: "Hotels.bin".to_string(),
+                attr_offset_ranges: vec![vec![0, 1], vec![1, 5], vec![5, 55], vec![55, 95], vec![95, 115]],
                 // ignore attrs checking
                 attrs_order: vec![],
                 attrs: HashMap::new(),
@@ -1265,6 +1346,7 @@ mod tests {
             assert_eq!(tables[i].reference_attr, ideal_tables[i].reference_attr);
             assert_eq!(tables[i].path_tsv, ideal_tables[i].path_tsv);
             assert_eq!(tables[i].path_bin, ideal_tables[i].path_bin);
+            assert_eq!(tables[i].attr_offset_ranges, ideal_tables[i].attr_offset_ranges);
         }
 
         assert!(Path::new(&format!(
@@ -1275,6 +1357,16 @@ mod tests {
         assert!(Path::new(&format!(
             "{}/{}/{}/{}",
             file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
+        ))
+        .exists());
+        assert!(Path::new(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Affiliates.bin"
+        ))
+        .exists());
+        assert!(Path::new(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Hotels.bin"
         ))
         .exists());
 
@@ -1311,6 +1403,11 @@ mod tests {
             file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
         ))
         .exists());
+        assert!(!Path::new(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Affiliates.bin"
+        ))
+        .exists());
 
         let tables = File::load_tables_meta("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
@@ -1326,6 +1423,11 @@ mod tests {
         assert!(!Path::new(&format!(
             "{}/{}/{}/{}",
             file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
+        ))
+        .exists());
+        assert!(!Path::new(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Hotels.bin"
         ))
         .exists());
 
