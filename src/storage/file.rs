@@ -1,19 +1,15 @@
-extern crate byteorder;
-
 use crate::component::datatype::DataType;
-use crate::component::field;
 use crate::component::field::Field;
 use crate::component::table::Row;
 use crate::component::table::Table;
-use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use crate::storage::bytescoder;
+use crate::storage::bytescoder::BytesCoder;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
 use std::io::{BufRead, BufReader, Write};
-use std::num;
 use std::path::Path;
-use std::string;
 
 #[derive(Debug, Clone)]
 pub struct File {
@@ -40,10 +36,7 @@ pub enum FileError {
     JsonParse,
     RangeContainsDeletedRecord,
     RangeExceedLatestRecord,
-    ParseIntError,
-    ParseFloatError,
-    StringLengthError,
-    StringDecodeError,
+    BytesError,
 }
 
 // structure of `usernames.json`
@@ -93,32 +86,6 @@ pub struct TableMeta {
     attr_offset_ranges: Vec<Vec<u32>>,
 }
 
-trait SliceExt {
-    fn trim(&self) -> &Self;
-}
-
-impl SliceExt for [u8] {
-    fn trim(&self) -> &[u8] {
-        fn is_padding(c: &u8) -> bool {
-            *c == 0 as u8
-        }
-
-        fn is_not_padding(c: &u8) -> bool {
-            !is_padding(c)
-        }
-
-        if let Some(first) = self.iter().position(is_not_padding) {
-            if let Some(last) = self.iter().rposition(is_not_padding) {
-                &self[first..last + 1]
-            } else {
-                unreachable!();
-            }
-        } else {
-            &[]
-        }
-    }
-}
-
 impl From<io::Error> for FileError {
     fn from(_err: io::Error) -> FileError {
         FileError::Io
@@ -131,21 +98,9 @@ impl From<serde_json::Error> for FileError {
     }
 }
 
-impl From<num::ParseIntError> for FileError {
-    fn from(_err: num::ParseIntError) -> FileError {
-        FileError::ParseIntError
-    }
-}
-
-impl From<num::ParseFloatError> for FileError {
-    fn from(_err: num::ParseFloatError) -> FileError {
-        FileError::ParseFloatError
-    }
-}
-
-impl From<string::FromUtf8Error> for FileError {
-    fn from(_err: string::FromUtf8Error) -> FileError {
-        FileError::StringDecodeError
+impl From<bytescoder::BytesCoderError> for FileError {
+    fn from(_err: bytescoder::BytesCoderError) -> FileError {
+        FileError::BytesError
     }
 }
 
@@ -173,12 +128,7 @@ impl fmt::Display for FileError {
             FileError::RangeExceedLatestRecord => {
                 write!(f, "The range of rows to fetch exceeds the latest record on the table.")
             }
-            FileError::ParseIntError => write!(f, "Error occurred during parsing value from Int data type."),
-            FileError::ParseFloatError => {
-                write!(f, "Error occurred during parsing value from Float or Double data type.")
-            }
-            FileError::StringLengthError => write!(f, "The string attempt to store exceed the size of field."),
-            FileError::StringDecodeError => write!(f, "Error occurred during decoding utf8 String from bytes."),
+            FileError::BytesError => write!(f, "Error raised from BytesCoder."),
         }
     }
 }
@@ -689,7 +639,8 @@ impl File {
             // set `__valid__` to 1
             let mut row_bytes = vec![1];
             for attr in table_meta_target.attrs_order[1..].iter() {
-                let attr_bytes = File::to_bytes(&table_meta_target.attrs[attr].datatype, row.0.get(attr).unwrap())?;
+                let attr_bytes =
+                    BytesCoder::to_bytes(&table_meta_target.attrs[attr].datatype, row.0.get(attr).unwrap())?;
                 row_bytes.extend_from_slice(&attr_bytes);
             }
             chunk_bytes.extend_from_slice(&row_bytes);
@@ -1005,44 +956,6 @@ impl File {
             DataType::Int => 4,
             DataType::Varchar(length) => length.clone() as u32,
         }
-    }
-
-    fn to_bytes(datatype: &DataType, str_val: &str) -> Result<Vec<u8>, FileError> {
-        let mut bs: Vec<u8> = vec![];
-        match datatype {
-            DataType::Char(length) => {
-                if str_val.len() > *length as usize {
-                    return Err(FileError::StringLengthError);
-                }
-                bs.extend_from_slice(str_val.as_bytes());
-                bs.extend_from_slice(&vec![0; *length as usize - str_val.len()])
-            }
-            DataType::Double => bs.write_f64::<BigEndian>(str_val.parse::<f64>()?)?,
-            DataType::Float => bs.write_f32::<BigEndian>(str_val.parse::<f32>()?)?,
-            DataType::Int => bs.write_i32::<BigEndian>(str_val.parse::<i32>()?)?,
-            DataType::Varchar(length) => {
-                if str_val.len() > *length as usize {
-                    return Err(FileError::StringLengthError);
-                }
-                bs.extend_from_slice(str_val.as_bytes());
-                bs.extend_from_slice(&vec![0; *length as usize - str_val.len()])
-            }
-        }
-
-        Ok(bs)
-    }
-
-    fn from_bytes(datatype: &DataType, bytes: &Vec<u8>) -> Result<String, FileError> {
-        let s: String;
-        match datatype {
-            DataType::Char(_length) => s = String::from_utf8(bytes.trim().to_vec())?,
-            DataType::Double => s = (&(*bytes)[..]).read_f64::<BigEndian>()?.to_string(),
-            DataType::Float => s = (&(*bytes)[..]).read_f32::<BigEndian>()?.to_string(),
-            DataType::Int => s = (&(*bytes)[..]).read_i32::<BigEndian>()?.to_string(),
-            DataType::Varchar(_length) => s = String::from_utf8(bytes.trim().to_vec())?,
-        }
-
-        Ok(s)
     }
 }
 
@@ -1856,49 +1769,5 @@ mod tests {
                 assert_eq!(val.clone(), rows[i].0[attr]);
             }
         }
-    }
-
-    #[test]
-    pub fn test_bytes_encode_decode() {
-        let datatype = DataType::Char(10);
-        let data = "test你好".to_string();
-        assert_eq!(
-            File::from_bytes(&datatype, &File::to_bytes(&datatype, &data).unwrap()).unwrap(),
-            data
-        );
-
-        let datatype = DataType::Double;
-        let data = "3.1415926".to_string();
-        assert_eq!(
-            File::from_bytes(&datatype, &File::to_bytes(&datatype, &data).unwrap()).unwrap(),
-            data
-        );
-
-        let datatype = DataType::Float;
-        let data = "2.71".to_string();
-        assert_eq!(
-            File::from_bytes(&datatype, &File::to_bytes(&datatype, &data).unwrap()).unwrap(),
-            data
-        );
-
-        let datatype = DataType::Int;
-        let data = "123456543".to_string();
-        assert_eq!(
-            File::from_bytes(&datatype, &File::to_bytes(&datatype, &data).unwrap()).unwrap(),
-            data
-        );
-
-        let datatype = DataType::Varchar(100);
-        let data = "abcdefghijklmnopqrstuvwxyz12345438967`+=/{}[]<>-_|%$#@!&^*()?,.".to_string();
-        assert_eq!(
-            File::from_bytes(&datatype, &File::to_bytes(&datatype, &data).unwrap()).unwrap(),
-            data
-        );
-
-        let datatype = DataType::Char(10);
-        assert_eq!(
-            File::to_bytes(&datatype, &data).unwrap_err(),
-            FileError::StringLengthError
-        );
     }
 }
