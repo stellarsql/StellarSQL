@@ -73,7 +73,6 @@ pub enum Token {
     Limit,
     NotNull,
     OrderBy,
-    OuterJoin,
     Percent,
     PrimaryKey,
     Procedure,
@@ -198,7 +197,6 @@ lazy_static! {
         m.insert("limit", sym("limit", Token::Limit, Group::Keyword));
         m.insert("not null", sym("not null", Token::NotNull, Group::Keyword));
         m.insert("order by", sym("order by", Token::OrderBy, Group::Keyword));
-        m.insert("outer join", sym("outer join", Token::OuterJoin, Group::Keyword));
         m.insert("percent", sym("percent", Token::Percent, Group::Keyword));
         m.insert("primary key", sym("primary key", Token::PrimaryKey, Group::Keyword));
         m.insert("procedure", sym("procedure", Token::Procedure, Group::Keyword));
