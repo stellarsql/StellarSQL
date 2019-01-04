@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
-use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -767,40 +767,89 @@ impl File {
         // perform storage check toward table level
         File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
 
-        // open table tsv
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let table_tsv_file = fs::File::open(&table_tsv_path)?;
-        let buffered = BufReader::new(table_tsv_file);
+        // load current tables from `tables.json`
+        let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
+        let tables_file = fs::File::open(&tables_json_path)?;
+        let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
 
-        let mut new_content: Vec<String> = vec![];
+        // locate meta of target table
+        let idx_target = tables_json
+            .tables
+            .iter()
+            .position(|table_meta| &table_meta.name == table_name);
 
-        // overwrite the `__valid__` attr of rows to delete
-        let mut rows_deleted = 0;
-        for (idx, line) in buffered.lines().enumerate() {
-            if idx < (row_range[0] + 1) as usize || idx > row_range[1] as usize {
-                new_content.push(line?);
-            } else {
-                let l = line?;
-                if (&l).starts_with("0") {
-                    return Err(FileError::RangeContainsDeletedRecord);
-                }
-                new_content.push(format!("0{}", &l[1..]));
-                rows_deleted += 1;
+        let table_meta_target: &TableMeta = match idx_target {
+            Some(idx) => &tables_json.tables[idx],
+            None => return Err(FileError::TableNotExists),
+        };
+
+        // open table bin for read
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let table_bin_file = fs::OpenOptions::new().read(true).open(table_bin_path)?;
+        let mut buffered = BufReader::new(table_bin_file);
+
+        // check if row range contains deleted record
+        for row_id in row_range[0]..row_range[1] {
+            buffered.seek(SeekFrom::Start((row_id * table_meta_target.row_length) as u64))?;
+            let mut valid_byte = [0; 1];
+            match buffered.read_exact(&mut valid_byte) {
+                Ok(_) => (),
+                Err(_) => return Err(FileError::RangeExceedLatestRecord),
+            };
+            if valid_byte[0] == 0 as u8 {
+                return Err(FileError::RangeContainsDeletedRecord);
             }
         }
-        if rows_deleted < row_range[1] - row_range[0] {
-            return Err(FileError::RangeExceedLatestRecord);
+
+        // open table bin for write
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let table_bin_file = fs::OpenOptions::new().write(true).open(table_bin_path)?;
+        let mut buffered = BufWriter::new(table_bin_file);
+
+        // locate the `__valid__` byte for each row and overwrite them to 0
+        for row_id in row_range[0]..row_range[1] {
+            buffered.seek(SeekFrom::Start((row_id * table_meta_target.row_length) as u64))?;
+            let mut del_valid_byte = [0; 1];
+            buffered.write_all(&mut del_valid_byte)?;
         }
 
-        // overwrite table tsv file
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let mut table_tsv_file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(table_tsv_path)?;
-        table_tsv_file.write_all(new_content.join("\n").as_bytes())?;
+        // perform equivalent operation on table tsv
+        if dotenv!("ENABLE_TSV") == "true" {
+            // open table tsv
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            let table_tsv_file = fs::File::open(&table_tsv_path)?;
+            let buffered = BufReader::new(table_tsv_file);
+
+            let mut new_content: Vec<String> = vec![];
+
+            // overwrite the `__valid__` attr of rows to delete
+            let mut rows_deleted = 0;
+            for (idx, line) in buffered.lines().enumerate() {
+                if idx < (row_range[0] + 1) as usize || idx > row_range[1] as usize {
+                    new_content.push(line?);
+                } else {
+                    let l = line?;
+                    if (&l).starts_with("0") {
+                        return Err(FileError::RangeContainsDeletedRecord);
+                    }
+                    new_content.push(format!("0{}", &l[1..]));
+                    rows_deleted += 1;
+                }
+            }
+            if rows_deleted < row_range[1] - row_range[0] {
+                return Err(FileError::RangeExceedLatestRecord);
+            }
+
+            // overwrite table tsv file
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            let mut table_tsv_file = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(table_tsv_path)?;
+            table_tsv_file.write_all(new_content.join("\n").as_bytes())?;
+        }
 
         Ok(())
     }
@@ -1641,93 +1690,95 @@ mod tests {
             FileError::RangeContainsDeletedRecord,
         );
 
-        // assert_eq!(
-        //     File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 2], Some(file_base_path)).unwrap_err(),
-        //     FileError::RangeContainsDeletedRecord,
-        // );
+        assert_eq!(
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 2], Some(file_base_path)).unwrap_err(),
+            FileError::RangeContainsDeletedRecord,
+        );
 
-        // File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 1], Some(file_base_path)).unwrap();
+        File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 1], Some(file_base_path)).unwrap();
 
-        // let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-        //     "{}/{}/{}/{}",
-        //     file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        // ))
-        // .unwrap()
-        // .split('\n')
-        // .map(|s| s.to_string())
-        // .collect();
+        if dotenv!("ENABLE_TSV") == "true" {
+            let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .unwrap()
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect();
 
-        // assert_eq!(aff_tsv_content.len(), 4);
-        // assert_eq!(aff_tsv_content[1], "0\t1\ttom@foo.com\tTom\t+886900000001".to_string());
-        // assert_eq!(aff_tsv_content[2], "0\t2\tben@foo.com\tBen\t+886900000002".to_string());
-        // assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+            assert_eq!(aff_tsv_content.len(), 4);
+            assert_eq!(aff_tsv_content[1], "0\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+            assert_eq!(aff_tsv_content[2], "0\t2\tben@foo.com\tBen\t+886900000002".to_string());
+            assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+        }
 
-        // let data = vec![
-        //     ("AffID", "4"),
-        //     ("AffName", "John"),
-        //     ("AffEmail", "john@dee.com"),
-        //     ("AffPhoneNum", "+886900000004"),
-        // ];
-        // aff_table.insert_row(data).unwrap();
+        let data = vec![
+            ("AffID", "4"),
+            ("AffName", "John"),
+            ("AffEmail", "john@dee.com"),
+            ("AffPhoneNum", "+886900000004"),
+        ];
+        aff_table.insert_row(data).unwrap();
 
-        // let data = vec![
-        //     ("AffID", "5"),
-        //     ("AffName", "Ray"),
-        //     ("AffEmail", "ray@dee.com"),
-        //     ("AffPhoneNum", "+886900000005"),
-        // ];
-        // aff_table.insert_row(data).unwrap();
+        let data = vec![
+            ("AffID", "5"),
+            ("AffName", "Ray"),
+            ("AffEmail", "ray@dee.com"),
+            ("AffPhoneNum", "+886900000005"),
+        ];
+        aff_table.insert_row(data).unwrap();
 
-        // let data = vec![
-        //     ("AffID", "6"),
-        //     ("AffName", "Bryn"),
-        //     ("AffEmail", "bryn@dee.com"),
-        //     ("AffPhoneNum", "+886900000006"),
-        // ];
-        // aff_table.insert_row(data).unwrap();
+        let data = vec![
+            ("AffID", "6"),
+            ("AffName", "Bryn"),
+            ("AffEmail", "bryn@dee.com"),
+            ("AffPhoneNum", "+886900000006"),
+        ];
+        aff_table.insert_row(data).unwrap();
 
-        // File::append_rows(
-        //     "crazyguy",
-        //     "BookerDB",
-        //     "Affiliates",
-        //     &aff_table.rows[3..].iter().cloned().collect(),
-        //     Some(file_base_path),
-        // )
-        // .unwrap();
+        File::append_rows(
+            "crazyguy",
+            "BookerDB",
+            "Affiliates",
+            &aff_table.rows[3..].iter().cloned().collect(),
+            Some(file_base_path),
+        )
+        .unwrap();
 
-        // let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-        //     "{}/{}/{}/{}",
-        //     file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        // ))
-        // .unwrap()
-        // .split('\n')
-        // .map(|s| s.to_string())
-        // .collect();
+        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+            "{}/{}/{}/{}",
+            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+        ))
+        .unwrap()
+        .split('\n')
+        .map(|s| s.to_string())
+        .collect();
 
-        // assert_eq!(aff_tsv_content.len(), 7);
+        assert_eq!(aff_tsv_content.len(), 7);
 
-        // assert_eq!(
-        //     File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 7], Some(file_base_path)).unwrap_err(),
-        //     FileError::RangeExceedLatestRecord
-        // );
+        assert_eq!(
+            File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 7], Some(file_base_path)).unwrap_err(),
+            FileError::RangeExceedLatestRecord
+        );
 
-        // File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 6], Some(file_base_path)).unwrap();
+        File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 6], Some(file_base_path)).unwrap();
 
-        // assert_eq!(
-        //     File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 6], Some(file_base_path)).unwrap_err(),
-        //     FileError::RangeContainsDeletedRecord,
-        // );
+        assert_eq!(
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 6], Some(file_base_path)).unwrap_err(),
+            FileError::RangeContainsDeletedRecord,
+        );
 
-        // let rows: Vec<Row> =
-        //     File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 5], Some(file_base_path)).unwrap();
+        let rows: Vec<Row> =
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 5], Some(file_base_path)).unwrap();
 
-        // assert_eq!(rows.len(), 3);
+        assert_eq!(rows.len(), 3);
 
-        // for i in 0..3 {
-        //     for (attr, val) in aff_table.rows[i + 2].0.iter() {
-        //         assert_eq!(val.clone(), rows[i].0[attr]);
-        //     }
-        // }
+        for i in 0..3 {
+            for (attr, val) in aff_table.rows[i + 2].0.iter() {
+                assert_eq!(val.clone(), rows[i].0[attr]);
+            }
+        }
 
         // *aff_table.rows[2].0.get_mut("AffName").unwrap() = "Leow".to_string();
         // *aff_table.rows[4].0.get_mut("AffEmail").unwrap() = "raymond@dee.com".to_string();
