@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fs;
 use std::io;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -32,10 +32,13 @@ pub enum FileError {
     TablesJsonNotExists,
     TableExists,
     TableNotExists,
+    TableBinNotExists,
     TableTsvNotExists,
     JsonParse,
     RangeContainsDeletedRecord,
     RangeExceedLatestRecord,
+    RangeAndNumRowsMismatch,
+    AttrNotExists,
     BytesError,
 }
 
@@ -75,15 +78,16 @@ struct TablesJson {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TableMeta {
     pub name: String,
+    pub path_tsv: String,
+    pub path_bin: String,
     pub primary_key: Vec<String>,
     pub foreign_key: Vec<String>,
     pub reference_table: Option<String>,
     pub reference_attr: Option<String>,
+    pub row_length: u32,
     pub attrs: HashMap<String, Field>,
-    path_tsv: String,
-    path_bin: String,
-    attrs_order: Vec<String>,
-    attr_offset_ranges: Vec<Vec<u32>>,
+    pub attrs_order: Vec<String>,
+    pub attr_offset_ranges: Vec<Vec<u32>>,
 }
 
 impl From<io::Error> for FileError {
@@ -122,12 +126,17 @@ impl fmt::Display for FileError {
             FileError::TablesJsonNotExists => write!(f, "The `tables.json` of the DB is lost."),
             FileError::TableExists => write!(f, "Table already exists and cannot be created again."),
             FileError::TableNotExists => write!(f, "Table not exists. Please create table first."),
+            FileError::TableBinNotExists => write!(f, "Table exists but correspoding bin file is lost."),
             FileError::TableTsvNotExists => write!(f, "Table exists but correspoding tsv file is lost."),
             FileError::JsonParse => write!(f, "JSON parsing error."),
             FileError::RangeContainsDeletedRecord => write!(f, "The range of rows to fetch contains deleted records."),
             FileError::RangeExceedLatestRecord => {
                 write!(f, "The range of rows to fetch exceeds the latest record on the table.")
             }
+            FileError::RangeAndNumRowsMismatch => {
+                write!(f, "The range of rows does not match number of rows to be modified.")
+            }
+            FileError::AttrNotExists => write!(f, "The row does not contain specified attribute."),
             FileError::BytesError => write!(f, "Error raised from BytesCoder."),
         }
     }
@@ -396,6 +405,7 @@ impl File {
             foreign_key: table.foreign_key.clone(),
             reference_table: table.reference_table.clone(),
             reference_attr: table.reference_attr.clone(),
+            row_length: 0,
             attrs_order: vec![],
             attrs: table.fields.clone(),
             attr_offset_ranges: vec![],
@@ -422,25 +432,16 @@ impl File {
             .iter()
             .map(|attr_name| File::get_datatype_size(&new_table_meta.attrs[attr_name].datatype))
             .collect();
+
         // `__valid__` attr occupies 1 byte
         let mut curr_offset = 1;
-
         for attr_size in attr_sizes {
             new_table_meta
                 .attr_offset_ranges
                 .push(vec![curr_offset, curr_offset + attr_size]);
             curr_offset += attr_size;
         }
-
-        // create corresponding tsv for the table, with the title line
-        let table_tsv_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_tsv);
-        let mut table_tsv_file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(table_tsv_path)?;
-        table_tsv_file.write_all(new_table_meta.attrs_order.join("\t").as_bytes())?;
+        new_table_meta.row_length = curr_offset;
 
         // create corresponding bin for the table, which is empty
         let table_bin_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_bin);
@@ -451,6 +452,19 @@ impl File {
             .truncate(true)
             .open(table_bin_path)?;
         table_bin_file.write_all("".as_bytes())?;
+
+        // perform equivalent operation on table tsv
+        if dotenv!("ENABLE_TSV") == "true" {
+            // create corresponding tsv for the table, with the title line
+            let table_tsv_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_tsv);
+            let mut table_tsv_file = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(table_tsv_path)?;
+            table_tsv_file.write_all(new_table_meta.attrs_order.join("\t").as_bytes())?;
+        }
 
         // insert the new table record into `tables.json`
         tables_json.tables.push(new_table_meta);
@@ -563,16 +577,19 @@ impl File {
             None => return Err(FileError::TableNotExists),
         };
 
-        // remove corresponding tsv file
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        if Path::new(&table_tsv_path).exists() {
-            fs::remove_file(&table_tsv_path)?;
-        }
-
         // remove corresponding bin file
         let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
         if Path::new(&table_bin_path).exists() {
             fs::remove_file(&table_bin_path)?;
+        }
+
+        // perform equivalent operation on table tsv
+        if dotenv!("ENABLE_TSV") == "true" {
+            // remove corresponding tsv file
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            if Path::new(&table_tsv_path).exists() {
+                fs::remove_file(&table_tsv_path)?;
+            }
         }
 
         // overwrite `tables.json`
@@ -615,41 +632,35 @@ impl File {
             None => return Err(FileError::TableNotExists),
         };
 
-        // create chunk of rows to be inserted
-        let mut chunk = String::new();
-        for row in rows {
-            // set `__valid__` to 1
-            let mut raw_row = vec!["1".to_string()];
-            let attrs = table_meta_target.attrs_order[1..]
-                .iter()
-                .map(|attr| row.0.get(attr).unwrap().clone())
-                .collect::<Vec<String>>();
-            raw_row.extend_from_slice(&attrs);
-            chunk += &("\n".to_string() + &raw_row.join("\t"));
-        }
-
-        // append chunk to table tsv
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let mut table_tsv_file = fs::OpenOptions::new().append(true).open(table_tsv_path)?;
-        table_tsv_file.write_all(chunk.as_bytes())?;
-
         // create chunk of bytes to be inserted
         let mut chunk_bytes = vec![];
         for row in rows {
-            // set `__valid__` to 1
-            let mut row_bytes = vec![1];
-            for attr in table_meta_target.attrs_order[1..].iter() {
-                let attr_bytes =
-                    BytesCoder::to_bytes(&table_meta_target.attrs[attr].datatype, row.0.get(attr).unwrap())?;
-                row_bytes.extend_from_slice(&attr_bytes);
-            }
-            chunk_bytes.extend_from_slice(&row_bytes);
+            chunk_bytes.extend_from_slice(&BytesCoder::row_to_bytes(&table_meta_target, row)?);
         }
 
         // append chunk of bytes to table bin
         let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
         let mut table_bin_file = fs::OpenOptions::new().append(true).open(table_bin_path)?;
         table_bin_file.write_all(&chunk_bytes)?;
+
+        // perform equivalent operation on table tsv
+        if dotenv!("ENABLE_TSV") == "true" {
+            // create chunk of rows to be inserted
+            let mut chunk = String::new();
+            for row in rows {
+                // set `__valid__` to 1
+                let mut raw_row = vec!["1".to_string()];
+                for attr in table_meta_target.attrs_order[1..].iter() {
+                    raw_row.push(row.0.get(attr).ok_or_else(|| FileError::AttrNotExists)?.clone());
+                }
+                chunk += &("\n".to_string() + &raw_row.join("\t"));
+            }
+
+            // append chunk to table tsv
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            let mut table_tsv_file = fs::OpenOptions::new().append(true).open(table_tsv_path)?;
+            table_tsv_file.write_all(chunk.as_bytes())?;
+        }
 
         Ok(())
     }
@@ -683,33 +694,57 @@ impl File {
             None => return Err(FileError::TableNotExists),
         };
 
-        // load rows from table
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let table_tsv_file = fs::File::open(&table_tsv_path)?;
-        let buffered = BufReader::new(table_tsv_file);
+        // load corresponding chunk of bytes from table bin
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let table_bin_file = fs::File::open(&table_bin_path)?;
+        let mut buffered = BufReader::new(table_bin_file);
 
-        let mut rows: Vec<Row> = vec![];
-        let mut curr_idx = row_range[0];
-        for line in buffered.lines().skip((row_range[0] + 1) as usize) {
-            let raw_line: Vec<String> = line?.replace('\n', "").split('\t').map(|e| e.to_string()).collect();
-            if raw_line[0] == "0".to_string() {
-                return Err(FileError::RangeContainsDeletedRecord);
-            }
-            let mut new_row = Row::new();
-            for i in 1..raw_line.len() {
-                new_row
-                    .0
-                    .insert(table_meta_target.attrs_order[i].clone(), raw_line[i].clone());
-            }
-            rows.push(new_row);
-            curr_idx += 1;
-            if curr_idx == row_range[1] {
-                break;
-            }
-        }
-        if rows.len() < ((row_range[1] - row_range[0]) as usize) {
+        let mut chunk_bytes = vec![];
+        buffered.seek(SeekFrom::Start((row_range[0] * table_meta_target.row_length) as u64))?;
+        let mut raw = buffered.take(((row_range[1] - row_range[0]) * table_meta_target.row_length) as u64);
+        raw.read_to_end(&mut chunk_bytes)?;
+
+        if chunk_bytes.len() != ((row_range[1] - row_range[0]) * table_meta_target.row_length) as usize {
             return Err(FileError::RangeExceedLatestRecord);
         }
+
+        // parse chunk of bytes to vector of rows
+        let mut rows: Vec<Row> = vec![];
+        for row_bytes in chunk_bytes.chunks(table_meta_target.row_length as usize) {
+            if row_bytes[0] == 0 as u8 {
+                return Err(FileError::RangeContainsDeletedRecord);
+            }
+            rows.push(BytesCoder::bytes_to_row(&table_meta_target, &row_bytes.to_vec())?);
+        }
+
+        // DEPRECATED: load rows from table tsv (functionally same with loading from bin)
+        // let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+        // let table_tsv_file = fs::File::open(&table_tsv_path)?;
+        // let buffered = BufReader::new(table_tsv_file);
+
+        // let mut rows: Vec<Row> = vec![];
+        // let mut curr_idx = row_range[0];
+        // for line in buffered.lines().skip((row_range[0] + 1) as usize) {
+        //     let raw_line: Vec<String> = line?.replace('\n', "").split('\t').map(|e| e.to_string()).collect();
+        //     if raw_line[0] == "0".to_string() {
+        //         return Err(FileError::RangeContainsDeletedRecord);
+        //     }
+        //     let mut new_row = Row::new();
+        //     for i in 1..raw_line.len() {
+        //         new_row
+        //             .0
+        //             .insert(table_meta_target.attrs_order[i].clone(), raw_line[i].clone());
+        //     }
+        //     rows.push(new_row);
+        //     curr_idx += 1;
+        //     if curr_idx == row_range[1] {
+        //         break;
+        //     }
+        // }
+        // if rows.len() < ((row_range[1] - row_range[0]) as usize) {
+        //     return Err(FileError::RangeExceedLatestRecord);
+        // }
+
         Ok(rows)
     }
 
@@ -718,58 +753,6 @@ impl File {
         db_name: &str,
         table_name: &str,
         row_range: &Vec<u32>,
-        file_base_path: Option<&str>,
-    ) -> Result<(), FileError> {
-        // determine file base path
-        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
-
-        // perform storage check toward table level
-        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
-
-        // open table tsv
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let table_tsv_file = fs::File::open(&table_tsv_path)?;
-        let buffered = BufReader::new(table_tsv_file);
-
-        let mut new_content: Vec<String> = vec![];
-
-        // overwrite the `__valid__` attr of rows to delete
-        let mut rows_deleted = 0;
-        for (idx, line) in buffered.lines().enumerate() {
-            if idx < (row_range[0] + 1) as usize || idx > row_range[1] as usize {
-                new_content.push(line?);
-            } else {
-                let l = line?;
-                if (&l).starts_with("0") {
-                    return Err(FileError::RangeContainsDeletedRecord);
-                }
-                new_content.push(format!("0{}", &l[1..]));
-                rows_deleted += 1;
-            }
-        }
-        if rows_deleted < row_range[1] - row_range[0] {
-            return Err(FileError::RangeExceedLatestRecord);
-        }
-
-        // overwrite table tsv file
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let mut table_tsv_file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(table_tsv_path)?;
-        table_tsv_file.write_all(new_content.join("\n").as_bytes())?;
-
-        Ok(())
-    }
-
-    pub fn modify_rows(
-        username: &str,
-        db_name: &str,
-        table_name: &str,
-        row_range: &Vec<u32>,
-        new_rows: &Vec<Row>,
         file_base_path: Option<&str>,
     ) -> Result<(), FileError> {
         // determine file base path
@@ -794,52 +777,191 @@ impl File {
             None => return Err(FileError::TableNotExists),
         };
 
-        // create modified rows
-        let mut modified_content: Vec<String> = vec![];
-        for row in new_rows {
-            // set `__valid__` to 1
-            let mut raw_row = vec!["1".to_string()];
-            let attrs = table_meta_target.attrs_order[1..]
-                .iter()
-                .map(|attr| row.0.get(attr).unwrap().clone())
-                .collect::<Vec<String>>();
-            raw_row.extend_from_slice(&attrs);
-            modified_content.push(raw_row.join("\t"));
-        }
+        // open table bin for read
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let table_bin_file = fs::OpenOptions::new().read(true).open(table_bin_path)?;
+        let mut buffered = BufReader::new(table_bin_file);
 
-        // open table tsv
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let table_tsv_file = fs::File::open(&table_tsv_path)?;
-        let buffered = BufReader::new(table_tsv_file);
-
-        // overwrite the rows to be modified
-        let mut new_content: Vec<String> = vec![];
-        let mut rows_modified = 0;
-        for (idx, line) in buffered.lines().enumerate() {
-            if idx < (row_range[0] + 1) as usize || idx > row_range[1] as usize {
-                new_content.push(line?);
-            } else {
-                let l = line?;
-                if (&l).starts_with("0") {
-                    return Err(FileError::RangeContainsDeletedRecord);
-                }
-                new_content.push(modified_content[idx - (row_range[0] + 1) as usize].clone());
-                rows_modified += 1;
+        // check if row range contains deleted record
+        for row_id in row_range[0]..row_range[1] {
+            buffered.seek(SeekFrom::Start((row_id * table_meta_target.row_length) as u64))?;
+            let mut valid_byte = [0; 1];
+            match buffered.read_exact(&mut valid_byte) {
+                Ok(_) => (),
+                Err(_) => return Err(FileError::RangeExceedLatestRecord),
+            };
+            if valid_byte[0] == 0 as u8 {
+                return Err(FileError::RangeContainsDeletedRecord);
             }
         }
-        if rows_modified < row_range[1] - row_range[0] {
-            return Err(FileError::RangeExceedLatestRecord);
+
+        // open table bin for write
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let table_bin_file = fs::OpenOptions::new().write(true).open(table_bin_path)?;
+        let mut buffered = BufWriter::new(table_bin_file);
+
+        // locate the `__valid__` byte for each row and overwrite them to 0
+        for row_id in row_range[0]..row_range[1] {
+            buffered.seek(SeekFrom::Start((row_id * table_meta_target.row_length) as u64))?;
+            let mut del_valid_byte = [0; 1];
+            buffered.write_all(&mut del_valid_byte)?;
         }
 
-        // overwrite table tsv file
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let mut table_tsv_file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(table_tsv_path)?;
-        table_tsv_file.write_all(new_content.join("\n").as_bytes())?;
+        // perform equivalent operation on table tsv
+        if dotenv!("ENABLE_TSV") == "true" {
+            // open table tsv
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            let table_tsv_file = fs::File::open(&table_tsv_path)?;
+            let buffered = BufReader::new(table_tsv_file);
+
+            let mut new_content: Vec<String> = vec![];
+
+            // overwrite the `__valid__` attr of rows to delete
+            let mut rows_deleted = 0;
+            for (idx, line) in buffered.lines().enumerate() {
+                if idx < (row_range[0] + 1) as usize || idx > row_range[1] as usize {
+                    new_content.push(line?);
+                } else {
+                    let l = line?;
+                    if (&l).starts_with("0") {
+                        return Err(FileError::RangeContainsDeletedRecord);
+                    }
+                    new_content.push(format!("0{}", &l[1..]));
+                    rows_deleted += 1;
+                }
+            }
+            if rows_deleted < row_range[1] - row_range[0] {
+                return Err(FileError::RangeExceedLatestRecord);
+            }
+
+            // overwrite table tsv file
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            let mut table_tsv_file = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(table_tsv_path)?;
+            table_tsv_file.write_all(new_content.join("\n").as_bytes())?;
+        }
+
+        Ok(())
+    }
+
+    pub fn modify_rows(
+        username: &str,
+        db_name: &str,
+        table_name: &str,
+        row_range: &Vec<u32>,
+        new_rows: &Vec<Row>,
+        file_base_path: Option<&str>,
+    ) -> Result<(), FileError> {
+        if row_range[1] - row_range[0] != new_rows.len() as u32 {
+            return Err(FileError::RangeAndNumRowsMismatch);
+        }
+
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+        // perform storage check toward table level
+        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
+
+        // load current tables from `tables.json`
+        let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
+        let tables_file = fs::File::open(&tables_json_path)?;
+        let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+
+        // locate meta of target table
+        let idx_target = tables_json
+            .tables
+            .iter()
+            .position(|table_meta| &table_meta.name == table_name);
+
+        let table_meta_target: &TableMeta = match idx_target {
+            Some(idx) => &tables_json.tables[idx],
+            None => return Err(FileError::TableNotExists),
+        };
+
+        // open table bin for read
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let table_bin_file = fs::OpenOptions::new().read(true).open(table_bin_path)?;
+        let mut buffered = BufReader::new(table_bin_file);
+
+        // check if row range contains deleted record
+        for row_id in row_range[0]..row_range[1] {
+            buffered.seek(SeekFrom::Start((row_id * table_meta_target.row_length) as u64))?;
+            let mut valid_byte = [0; 1];
+            match buffered.read_exact(&mut valid_byte) {
+                Ok(_) => (),
+                Err(_) => return Err(FileError::RangeExceedLatestRecord),
+            };
+            if valid_byte[0] == 0 as u8 {
+                return Err(FileError::RangeContainsDeletedRecord);
+            }
+        }
+
+        // open table bin for write
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let table_bin_file = fs::OpenOptions::new().write(true).open(table_bin_path)?;
+        let mut buffered = BufWriter::new(table_bin_file);
+
+        // create modified chunk of bytes
+        let mut modified_chunk_bytes: Vec<u8> = vec![];
+        for row in new_rows {
+            modified_chunk_bytes.extend_from_slice(&BytesCoder::row_to_bytes(&table_meta_target, row)?);
+        }
+
+        // overwrite modified chunk of bytes
+        buffered.seek(SeekFrom::Start((row_range[0] * table_meta_target.row_length) as u64))?;
+        buffered.write_all(&mut modified_chunk_bytes)?;
+
+        // perform equivalent operation on table tsv
+        if dotenv!("ENABLE_TSV") == "true" {
+            // create modified rows
+            let mut modified_content: Vec<String> = vec![];
+            for row in new_rows {
+                // set `__valid__` to 1
+                let mut raw_row = vec!["1".to_string()];
+                for attr in table_meta_target.attrs_order[1..].iter() {
+                    raw_row.push(row.0.get(attr).ok_or_else(|| FileError::AttrNotExists)?.clone());
+                }
+                modified_content.push(raw_row.join("\t"));
+            }
+
+            // open table tsv
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            let table_tsv_file = fs::File::open(&table_tsv_path)?;
+            let buffered = BufReader::new(table_tsv_file);
+
+            // overwrite the rows to be modified
+            let mut new_content: Vec<String> = vec![];
+            let mut rows_modified = 0;
+            for (idx, line) in buffered.lines().enumerate() {
+                if idx < (row_range[0] + 1) as usize || idx > row_range[1] as usize {
+                    new_content.push(line?);
+                } else {
+                    let l = line?;
+                    if (&l).starts_with("0") {
+                        return Err(FileError::RangeContainsDeletedRecord);
+                    }
+                    new_content.push(modified_content[idx - (row_range[0] + 1) as usize].clone());
+                    rows_modified += 1;
+                }
+            }
+            if rows_modified < row_range[1] - row_range[0] {
+                return Err(FileError::RangeExceedLatestRecord);
+            }
+
+            // overwrite table tsv file
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            let mut table_tsv_file = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(table_tsv_path)?;
+            table_tsv_file.write_all(new_content.join("\n").as_bytes())?;
+        }
 
         Ok(())
     }
@@ -939,10 +1061,18 @@ impl File {
             return Err(FileError::TableNotExists);
         }
 
-        // check if table tsv exists
-        let table_tsv_path = format!("{}/{}.tsv", db_path, table_name.unwrap());
-        if !Path::new(&table_tsv_path).exists() {
-            return Err(FileError::TableTsvNotExists);
+        // check if table bin exists
+        let table_bin_path = format!("{}/{}.bin", db_path, table_name.unwrap());
+        if !Path::new(&table_bin_path).exists() {
+            return Err(FileError::TableBinNotExists);
+        }
+
+        if dotenv!("ENABLE_TSV") == "true" {
+            // check if table tsv exists
+            let table_tsv_path = format!("{}/{}.tsv", db_path, table_name.unwrap());
+            if !Path::new(&table_tsv_path).exists() {
+                return Err(FileError::TableTsvNotExists);
+            }
         }
 
         Ok(())
@@ -1305,6 +1435,7 @@ mod tests {
                 path_tsv: "Affiliates.tsv".to_string(),
                 path_bin: "Affiliates.bin".to_string(),
                 attr_offset_ranges: vec![vec![0, 1], vec![1, 5], vec![5, 55], vec![55, 95], vec![95, 115]],
+                row_length: 115,
                 // ignore attrs checking
                 attrs_order: vec![],
                 attrs: HashMap::new(),
@@ -1318,6 +1449,7 @@ mod tests {
                 path_tsv: "Hotels.tsv".to_string(),
                 path_bin: "Hotels.bin".to_string(),
                 attr_offset_ranges: vec![vec![0, 1], vec![1, 5], vec![5, 55], vec![55, 95], vec![95, 115]],
+                row_length: 115,
                 // ignore attrs checking
                 attrs_order: vec![],
                 attrs: HashMap::new(),
@@ -1344,21 +1476,12 @@ mod tests {
             assert_eq!(tables[i].foreign_key, ideal_tables[i].foreign_key);
             assert_eq!(tables[i].reference_table, ideal_tables[i].reference_table);
             assert_eq!(tables[i].reference_attr, ideal_tables[i].reference_attr);
+            assert_eq!(tables[i].row_length, ideal_tables[i].row_length);
             assert_eq!(tables[i].path_tsv, ideal_tables[i].path_tsv);
             assert_eq!(tables[i].path_bin, ideal_tables[i].path_bin);
             assert_eq!(tables[i].attr_offset_ranges, ideal_tables[i].attr_offset_ranges);
         }
 
-        assert!(Path::new(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .exists());
-        assert!(Path::new(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
-        ))
-        .exists());
         assert!(Path::new(&format!(
             "{}/{}/{}/{}",
             file_base_path, "crazyguy", "BookerDB", "Affiliates.bin"
@@ -1370,18 +1493,31 @@ mod tests {
         ))
         .exists());
 
-        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .unwrap()
-        .split('\t')
-        .map(|s| s.to_string())
-        .collect();
+        if dotenv!("ENABLE_TSV") == "true" {
+            assert!(Path::new(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .exists());
+            assert!(Path::new(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
+            ))
+            .exists());
 
-        assert_eq!(aff_tsv_content[0], "__valid__".to_string());
-        assert_eq!(aff_tsv_content[1], "AffID".to_string());
-        assert_eq!(aff_tsv_content.len(), 5);
+            let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .unwrap()
+            .split('\t')
+            .map(|s| s.to_string())
+            .collect();
+
+            assert_eq!(aff_tsv_content[0], "__valid__".to_string());
+            assert_eq!(aff_tsv_content[1], "AffID".to_string());
+            assert_eq!(aff_tsv_content.len(), 5);
+        }
 
         assert_eq!(
             File::create_table("happyguy", "BookerDB", &htl_table, Some(file_base_path)).unwrap_err(),
@@ -1400,14 +1536,17 @@ mod tests {
 
         assert!(!Path::new(&format!(
             "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .exists());
-        assert!(!Path::new(&format!(
-            "{}/{}/{}/{}",
             file_base_path, "crazyguy", "BookerDB", "Affiliates.bin"
         ))
         .exists());
+
+        if dotenv!("ENABLE_TSV") == "true" {
+            assert!(!Path::new(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .exists());
+        }
 
         let tables = File::load_tables_meta("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
@@ -1422,14 +1561,17 @@ mod tests {
 
         assert!(!Path::new(&format!(
             "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
-        ))
-        .exists());
-        assert!(!Path::new(&format!(
-            "{}/{}/{}/{}",
             file_base_path, "crazyguy", "BookerDB", "Hotels.bin"
         ))
         .exists());
+
+        if dotenv!("ENABLE_TSV") == "true" {
+            assert!(!Path::new(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
+            ))
+            .exists());
+        }
 
         let tables = File::load_tables_meta("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
@@ -1504,17 +1646,19 @@ mod tests {
         )
         .unwrap();
 
-        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .unwrap()
-        .split('\n')
-        .map(|s| s.to_string())
-        .collect();
+        if dotenv!("ENABLE_TSV") == "true" {
+            let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .unwrap()
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect();
 
-        assert_eq!(aff_tsv_content.len(), 2);
-        assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+            assert_eq!(aff_tsv_content.len(), 2);
+            assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+        }
 
         let data = vec![
             ("AffID", "2"),
@@ -1540,19 +1684,21 @@ mod tests {
         )
         .unwrap();
 
-        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .unwrap()
-        .split('\n')
-        .map(|s| s.to_string())
-        .collect();
+        if dotenv!("ENABLE_TSV") == "true" {
+            let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .unwrap()
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect();
 
-        assert_eq!(aff_tsv_content.len(), 4);
-        assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
-        assert_eq!(aff_tsv_content[2], "1\t2\tben@foo.com\tBen\t+886900000002".to_string());
-        assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+            assert_eq!(aff_tsv_content.len(), 4);
+            assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+            assert_eq!(aff_tsv_content[2], "1\t2\tben@foo.com\tBen\t+886900000002".to_string());
+            assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+        }
 
         let rows: Vec<Row> =
             File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 1], Some(file_base_path)).unwrap();
@@ -1604,19 +1750,21 @@ mod tests {
 
         File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 1], Some(file_base_path)).unwrap();
 
-        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .unwrap()
-        .split('\n')
-        .map(|s| s.to_string())
-        .collect();
+        if dotenv!("ENABLE_TSV") == "true" {
+            let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .unwrap()
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect();
 
-        assert_eq!(aff_tsv_content.len(), 4);
-        assert_eq!(aff_tsv_content[1], "0\t1\ttom@foo.com\tTom\t+886900000001".to_string());
-        assert_eq!(aff_tsv_content[2], "0\t2\tben@foo.com\tBen\t+886900000002".to_string());
-        assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+            assert_eq!(aff_tsv_content.len(), 4);
+            assert_eq!(aff_tsv_content[1], "0\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+            assert_eq!(aff_tsv_content[2], "0\t2\tben@foo.com\tBen\t+886900000002".to_string());
+            assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+        }
 
         let data = vec![
             ("AffID", "4"),
@@ -1651,16 +1799,18 @@ mod tests {
         )
         .unwrap();
 
-        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .unwrap()
-        .split('\n')
-        .map(|s| s.to_string())
-        .collect();
+        if dotenv!("ENABLE_TSV") == "true" {
+            let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .unwrap()
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect();
 
-        assert_eq!(aff_tsv_content.len(), 7);
+            assert_eq!(aff_tsv_content.len(), 7);
+        }
 
         assert_eq!(
             File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 7], Some(file_base_path)).unwrap_err(),
@@ -1746,6 +1896,20 @@ mod tests {
             Some(file_base_path),
         )
         .unwrap();
+
+        assert_eq!(
+            File::modify_rows(
+                "crazyguy",
+                "BookerDB",
+                "Affiliates",
+                &vec![6, 10],
+                &aff_table.rows[1..4].iter().cloned().collect(),
+                Some(file_base_path)
+            )
+            .unwrap_err(),
+            FileError::RangeAndNumRowsMismatch
+        );
+
         assert_eq!(
             File::modify_rows(
                 "crazyguy",
