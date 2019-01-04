@@ -1,7 +1,12 @@
 extern crate byteorder;
 
 use crate::component::datatype::DataType;
+use crate::component::field;
+use crate::component::field::Field;
+use crate::component::table::Row;
+use crate::storage::file::TableMeta;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
+use std::collections::HashMap;
 use std::fmt;
 use std::io;
 use std::num;
@@ -88,7 +93,7 @@ impl fmt::Display for BytesCoderError {
 }
 
 impl BytesCoder {
-    pub fn to_bytes(datatype: &DataType, str_val: &str) -> Result<Vec<u8>, BytesCoderError> {
+    pub fn attr_to_bytes(datatype: &DataType, str_val: &str) -> Result<Vec<u8>, BytesCoderError> {
         let mut bs: Vec<u8> = vec![];
         match datatype {
             DataType::Char(length) => {
@@ -113,7 +118,7 @@ impl BytesCoder {
         Ok(bs)
     }
 
-    pub fn from_bytes(datatype: &DataType, bytes: &Vec<u8>) -> Result<String, BytesCoderError> {
+    pub fn bytes_to_attr(datatype: &DataType, bytes: &Vec<u8>) -> Result<String, BytesCoderError> {
         let s: String;
         match datatype {
             DataType::Char(_length) => s = String::from_utf8(bytes.trim().to_vec())?,
@@ -125,52 +130,166 @@ impl BytesCoder {
 
         Ok(s)
     }
+
+    pub fn row_to_bytes(tablemeta: &TableMeta, row: &Row) -> Result<Vec<u8>, BytesCoderError> {
+        // set `__valid__` to 1
+        let mut row_bytes = vec![1];
+        for attr in tablemeta.attrs_order[1..].iter() {
+            let attr_bytes = BytesCoder::attr_to_bytes(&tablemeta.attrs[attr].datatype, row.0.get(attr).unwrap())?;
+            row_bytes.extend_from_slice(&attr_bytes);
+        }
+
+        Ok(row_bytes)
+    }
+
+    pub fn bytes_to_row(tablemeta: &TableMeta, bytes: &Vec<u8>) -> Result<Row, BytesCoderError> {
+        let mut attr_vals: Vec<String> = vec![];
+        for (idx, attr) in tablemeta.attrs_order[1..].iter().enumerate() {
+            let attr_bytes = bytes
+                [tablemeta.attr_offset_ranges[idx + 1][0] as usize..tablemeta.attr_offset_ranges[idx + 1][1] as usize]
+                .to_vec();
+            let attr_val = BytesCoder::bytes_to_attr(&tablemeta.attrs[attr].datatype, &attr_bytes)?;
+            attr_vals.push(attr_val);
+        }
+        let mut new_row = Row::new();
+        for i in 0..attr_vals.len() {
+            new_row
+                .0
+                .insert(tablemeta.attrs_order[i + 1].clone(), attr_vals[i].clone());
+        }
+
+        Ok(new_row)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    pub fn test_bytes_encode_decode() {
+    pub fn test_attr_encode_decode() {
         let datatype = DataType::Char(10);
         let data = "test你好".to_string();
         assert_eq!(
-            BytesCoder::from_bytes(&datatype, &BytesCoder::to_bytes(&datatype, &data).unwrap()).unwrap(),
+            BytesCoder::bytes_to_attr(&datatype, &BytesCoder::attr_to_bytes(&datatype, &data).unwrap()).unwrap(),
             data
         );
 
         let datatype = DataType::Double;
         let data = "3.1415926".to_string();
         assert_eq!(
-            BytesCoder::from_bytes(&datatype, &BytesCoder::to_bytes(&datatype, &data).unwrap()).unwrap(),
+            BytesCoder::bytes_to_attr(&datatype, &BytesCoder::attr_to_bytes(&datatype, &data).unwrap()).unwrap(),
             data
         );
 
         let datatype = DataType::Float;
         let data = "2.71".to_string();
         assert_eq!(
-            BytesCoder::from_bytes(&datatype, &BytesCoder::to_bytes(&datatype, &data).unwrap()).unwrap(),
+            BytesCoder::bytes_to_attr(&datatype, &BytesCoder::attr_to_bytes(&datatype, &data).unwrap()).unwrap(),
             data
         );
 
         let datatype = DataType::Int;
         let data = "123456543".to_string();
         assert_eq!(
-            BytesCoder::from_bytes(&datatype, &BytesCoder::to_bytes(&datatype, &data).unwrap()).unwrap(),
+            BytesCoder::bytes_to_attr(&datatype, &BytesCoder::attr_to_bytes(&datatype, &data).unwrap()).unwrap(),
             data
         );
 
         let datatype = DataType::Varchar(100);
         let data = "abcdefghijklmnopqrstuvwxyz12345438967`+=/{}[]<>-_|%$#@!&^*()?,.".to_string();
         assert_eq!(
-            BytesCoder::from_bytes(&datatype, &BytesCoder::to_bytes(&datatype, &data).unwrap()).unwrap(),
+            BytesCoder::bytes_to_attr(&datatype, &BytesCoder::attr_to_bytes(&datatype, &data).unwrap()).unwrap(),
             data
         );
 
         let datatype = DataType::Char(10);
         assert_eq!(
-            BytesCoder::to_bytes(&datatype, &data).unwrap_err(),
+            BytesCoder::attr_to_bytes(&datatype, &data).unwrap_err(),
             BytesCoderError::StringLength
         );
+    }
+
+    #[test]
+    pub fn test_row_encode_decode() {
+        let mut aff_table_meta = TableMeta {
+            name: "Affiliates".to_string(),
+            primary_key: vec!["AffID".to_string()],
+            foreign_key: vec![],
+            reference_table: None,
+            reference_attr: None,
+            path_tsv: "Affiliates.tsv".to_string(),
+            path_bin: "Affiliates.bin".to_string(),
+            attr_offset_ranges: vec![vec![0, 1], vec![1, 5], vec![5, 55], vec![55, 95], vec![95, 115]],
+            row_length: 115,
+            // ignore attrs checking
+            attrs_order: vec![
+                "__valid__".to_string(),
+                "AffID".to_string(),
+                "AffEmail".to_string(),
+                "AffName".to_string(),
+                "AffPhoneNum".to_string(),
+            ],
+            attrs: HashMap::new(),
+        };
+
+        aff_table_meta.attrs.insert(
+            "AffID".to_string(),
+            Field::new_all("AffID", DataType::Int, true, None, field::Checker::None, false),
+        );
+        aff_table_meta.attrs.insert(
+            "AffName".to_string(),
+            Field::new_all(
+                "AffName",
+                DataType::Varchar(40),
+                true,
+                None,
+                field::Checker::None,
+                false,
+            ),
+        );
+        aff_table_meta.attrs.insert(
+            "AffEmail".to_string(),
+            Field::new_all(
+                "AffEmail",
+                DataType::Varchar(50),
+                true,
+                None,
+                field::Checker::None,
+                false,
+            ),
+        );
+        aff_table_meta.attrs.insert(
+            "AffPhoneNum".to_string(),
+            Field::new_all(
+                "AffPhoneNum",
+                DataType::Varchar(20),
+                false,
+                Some("+886900000000".to_string()),
+                field::Checker::None,
+                false,
+            ),
+        );
+
+        let data = vec![
+            ("AffID", "2"),
+            ("AffName", "Ben"),
+            ("AffEmail", "ben@foo.com"),
+            ("AffPhoneNum", "+886900000002"),
+        ];
+
+        let mut row = Row::new();
+        for i in 0..data.len() {
+            row.0.insert(data[i].0.to_string(), data[i].1.to_string());
+        }
+
+        let reconstructed_row = BytesCoder::bytes_to_row(
+            &aff_table_meta,
+            &BytesCoder::row_to_bytes(&aff_table_meta, &row).unwrap(),
+        )
+        .unwrap();
+
+        for (attr, val) in row.0.iter() {
+            assert_eq!(val.clone(), reconstructed_row.0[attr]);
+        }
     }
 }

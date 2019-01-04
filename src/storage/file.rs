@@ -77,16 +77,16 @@ struct TablesJson {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TableMeta {
     pub name: String,
+    pub path_tsv: String,
+    pub path_bin: String,
     pub primary_key: Vec<String>,
     pub foreign_key: Vec<String>,
     pub reference_table: Option<String>,
     pub reference_attr: Option<String>,
+    pub row_length: u32,
     pub attrs: HashMap<String, Field>,
-    path_tsv: String,
-    path_bin: String,
-    row_length: u32,
-    attrs_order: Vec<String>,
-    attr_offset_ranges: Vec<Vec<u32>>,
+    pub attrs_order: Vec<String>,
+    pub attr_offset_ranges: Vec<Vec<u32>>,
 }
 
 impl From<io::Error> for FileError {
@@ -633,14 +633,7 @@ impl File {
         // create chunk of bytes to be inserted
         let mut chunk_bytes = vec![];
         for row in rows {
-            // set `__valid__` to 1
-            let mut row_bytes = vec![1];
-            for attr in table_meta_target.attrs_order[1..].iter() {
-                let attr_bytes =
-                    BytesCoder::to_bytes(&table_meta_target.attrs[attr].datatype, row.0.get(attr).unwrap())?;
-                row_bytes.extend_from_slice(&attr_bytes);
-            }
-            chunk_bytes.extend_from_slice(&row_bytes);
+            chunk_bytes.extend_from_slice(&BytesCoder::row_to_bytes(&table_meta_target, row)?);
         }
 
         // append chunk of bytes to table bin
@@ -721,21 +714,7 @@ impl File {
             if row_bytes[0] == 0 as u8 {
                 return Err(FileError::RangeContainsDeletedRecord);
             }
-            let mut attr_vals: Vec<String> = vec![];
-            for (idx, attr) in table_meta_target.attrs_order[1..].iter().enumerate() {
-                let attr_bytes = row_bytes[table_meta_target.attr_offset_ranges[idx + 1][0] as usize
-                    ..table_meta_target.attr_offset_ranges[idx + 1][1] as usize]
-                    .to_vec();
-                let attr_val = BytesCoder::from_bytes(&table_meta_target.attrs[attr].datatype, &attr_bytes)?;
-                attr_vals.push(attr_val);
-            }
-            let mut new_row = Row::new();
-            for i in 0..attr_vals.len() {
-                new_row
-                    .0
-                    .insert(table_meta_target.attrs_order[i + 1].clone(), attr_vals[i].clone());
-            }
-            rows.push(new_row);
+            rows.push(BytesCoder::bytes_to_row(&table_meta_target, &row_bytes.to_vec())?);
         }
 
         // DEPRECATED: load rows from table tsv (functionally same with loading from bin)
@@ -929,14 +908,7 @@ impl File {
         // create modified chunk of bytes
         let mut modified_chunk_bytes: Vec<u8> = vec![];
         for row in new_rows {
-            // set `__valid__` to 1
-            let mut row_bytes = vec![1];
-            for attr in table_meta_target.attrs_order[1..].iter() {
-                let attr_bytes =
-                    BytesCoder::to_bytes(&table_meta_target.attrs[attr].datatype, row.0.get(attr).unwrap())?;
-                row_bytes.extend_from_slice(&attr_bytes);
-            }
-            modified_chunk_bytes.extend_from_slice(&row_bytes);
+            modified_chunk_bytes.extend_from_slice(&BytesCoder::row_to_bytes(&table_meta_target, row)?);
         }
 
         // overwrite modified chunk of bytes
