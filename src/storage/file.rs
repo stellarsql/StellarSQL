@@ -36,6 +36,7 @@ pub enum FileError {
     JsonParse,
     RangeContainsDeletedRecord,
     RangeExceedLatestRecord,
+    RangeAndNumRowsMismatch,
     BytesError,
 }
 
@@ -128,6 +129,9 @@ impl fmt::Display for FileError {
             FileError::RangeContainsDeletedRecord => write!(f, "The range of rows to fetch contains deleted records."),
             FileError::RangeExceedLatestRecord => {
                 write!(f, "The range of rows to fetch exceeds the latest record on the table.")
+            }
+            FileError::RangeAndNumRowsMismatch => {
+                write!(f, "The range of rows does not match number of rows to be modified.")
             }
             FileError::BytesError => write!(f, "Error raised from BytesCoder."),
         }
@@ -862,6 +866,10 @@ impl File {
         new_rows: &Vec<Row>,
         file_base_path: Option<&str>,
     ) -> Result<(), FileError> {
+        if row_range[1] - row_range[0] != new_rows.len() as u32 {
+            return Err(FileError::RangeAndNumRowsMismatch);
+        }
+
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
@@ -884,52 +892,95 @@ impl File {
             None => return Err(FileError::TableNotExists),
         };
 
-        // create modified rows
-        let mut modified_content: Vec<String> = vec![];
-        for row in new_rows {
-            // set `__valid__` to 1
-            let mut raw_row = vec!["1".to_string()];
-            let attrs = table_meta_target.attrs_order[1..]
-                .iter()
-                .map(|attr| row.0.get(attr).unwrap().clone())
-                .collect::<Vec<String>>();
-            raw_row.extend_from_slice(&attrs);
-            modified_content.push(raw_row.join("\t"));
-        }
+        // open table bin for read
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let table_bin_file = fs::OpenOptions::new().read(true).open(table_bin_path)?;
+        let mut buffered = BufReader::new(table_bin_file);
 
-        // open table tsv
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let table_tsv_file = fs::File::open(&table_tsv_path)?;
-        let buffered = BufReader::new(table_tsv_file);
-
-        // overwrite the rows to be modified
-        let mut new_content: Vec<String> = vec![];
-        let mut rows_modified = 0;
-        for (idx, line) in buffered.lines().enumerate() {
-            if idx < (row_range[0] + 1) as usize || idx > row_range[1] as usize {
-                new_content.push(line?);
-            } else {
-                let l = line?;
-                if (&l).starts_with("0") {
-                    return Err(FileError::RangeContainsDeletedRecord);
-                }
-                new_content.push(modified_content[idx - (row_range[0] + 1) as usize].clone());
-                rows_modified += 1;
+        // check if row range contains deleted record
+        for row_id in row_range[0]..row_range[1] {
+            buffered.seek(SeekFrom::Start((row_id * table_meta_target.row_length) as u64))?;
+            let mut valid_byte = [0; 1];
+            match buffered.read_exact(&mut valid_byte) {
+                Ok(_) => (),
+                Err(_) => return Err(FileError::RangeExceedLatestRecord),
+            };
+            if valid_byte[0] == 0 as u8 {
+                return Err(FileError::RangeContainsDeletedRecord);
             }
         }
-        if rows_modified < row_range[1] - row_range[0] {
-            return Err(FileError::RangeExceedLatestRecord);
+
+        // open table bin for write
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let table_bin_file = fs::OpenOptions::new().write(true).open(table_bin_path)?;
+        let mut buffered = BufWriter::new(table_bin_file);
+
+        // create modified chunk of bytes
+        let mut modified_chunk_bytes: Vec<u8> = vec![];
+        for row in new_rows {
+            // set `__valid__` to 1
+            let mut row_bytes = vec![1];
+            for attr in table_meta_target.attrs_order[1..].iter() {
+                let attr_bytes =
+                    BytesCoder::to_bytes(&table_meta_target.attrs[attr].datatype, row.0.get(attr).unwrap())?;
+                row_bytes.extend_from_slice(&attr_bytes);
+            }
+            modified_chunk_bytes.extend_from_slice(&row_bytes);
         }
 
-        // overwrite table tsv file
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let mut table_tsv_file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(table_tsv_path)?;
-        table_tsv_file.write_all(new_content.join("\n").as_bytes())?;
+        // overwrite modified chunk of bytes
+        buffered.seek(SeekFrom::Start((row_range[0] * table_meta_target.row_length) as u64))?;
+        buffered.write_all(&mut modified_chunk_bytes)?;
+
+        // perform equivalent operation on table tsv
+        if dotenv!("ENABLE_TSV") == "true" {
+            // create modified rows
+            let mut modified_content: Vec<String> = vec![];
+            for row in new_rows {
+                // set `__valid__` to 1
+                let mut raw_row = vec!["1".to_string()];
+                let attrs = table_meta_target.attrs_order[1..]
+                    .iter()
+                    .map(|attr| row.0.get(attr).unwrap().clone())
+                    .collect::<Vec<String>>();
+                raw_row.extend_from_slice(&attrs);
+                modified_content.push(raw_row.join("\t"));
+            }
+
+            // open table tsv
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            let table_tsv_file = fs::File::open(&table_tsv_path)?;
+            let buffered = BufReader::new(table_tsv_file);
+
+            // overwrite the rows to be modified
+            let mut new_content: Vec<String> = vec![];
+            let mut rows_modified = 0;
+            for (idx, line) in buffered.lines().enumerate() {
+                if idx < (row_range[0] + 1) as usize || idx > row_range[1] as usize {
+                    new_content.push(line?);
+                } else {
+                    let l = line?;
+                    if (&l).starts_with("0") {
+                        return Err(FileError::RangeContainsDeletedRecord);
+                    }
+                    new_content.push(modified_content[idx - (row_range[0] + 1) as usize].clone());
+                    rows_modified += 1;
+                }
+            }
+            if rows_modified < row_range[1] - row_range[0] {
+                return Err(FileError::RangeExceedLatestRecord);
+            }
+
+            // overwrite table tsv file
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            let mut table_tsv_file = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(table_tsv_path)?;
+            table_tsv_file.write_all(new_content.join("\n").as_bytes())?;
+        }
 
         Ok(())
     }
@@ -1780,89 +1831,103 @@ mod tests {
             }
         }
 
-        // *aff_table.rows[2].0.get_mut("AffName").unwrap() = "Leow".to_string();
-        // *aff_table.rows[4].0.get_mut("AffEmail").unwrap() = "raymond@dee.com".to_string();
-        // *aff_table.rows[4].0.get_mut("AffPhoneNum").unwrap() = "+886900000015".to_string();
-        // File::modify_rows(
-        //     "crazyguy",
-        //     "BookerDB",
-        //     "Affiliates",
-        //     &vec![2, 5],
-        //     &aff_table.rows[2..5].iter().cloned().collect(),
-        //     Some(file_base_path),
-        // )
-        // .unwrap();
+        *aff_table.rows[2].0.get_mut("AffName").unwrap() = "Leow".to_string();
+        *aff_table.rows[4].0.get_mut("AffEmail").unwrap() = "raymond@dee.com".to_string();
+        *aff_table.rows[4].0.get_mut("AffPhoneNum").unwrap() = "+886900000015".to_string();
+        File::modify_rows(
+            "crazyguy",
+            "BookerDB",
+            "Affiliates",
+            &vec![2, 5],
+            &aff_table.rows[2..5].iter().cloned().collect(),
+            Some(file_base_path),
+        )
+        .unwrap();
 
-        // let rows: Vec<Row> =
-        //     File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 5], Some(file_base_path)).unwrap();
+        let rows: Vec<Row> =
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 5], Some(file_base_path)).unwrap();
 
-        // assert_eq!(rows.len(), 3);
+        assert_eq!(rows.len(), 3);
 
-        // for i in 0..3 {
-        //     for (attr, val) in aff_table.rows[i + 2].0.iter() {
-        //         assert_eq!(val.clone(), rows[i].0[attr]);
-        //     }
-        // }
+        for i in 0..3 {
+            for (attr, val) in aff_table.rows[i + 2].0.iter() {
+                assert_eq!(val.clone(), rows[i].0[attr]);
+            }
+        }
 
-        // assert_eq!(
-        //     File::modify_rows(
-        //         "crazyguy",
-        //         "BookerDB",
-        //         "Affiliates",
-        //         &vec![1, 4],
-        //         &aff_table.rows[1..4].iter().cloned().collect(),
-        //         Some(file_base_path)
-        //     )
-        //     .unwrap_err(),
-        //     FileError::RangeContainsDeletedRecord
-        // );
+        assert_eq!(
+            File::modify_rows(
+                "crazyguy",
+                "BookerDB",
+                "Affiliates",
+                &vec![1, 4],
+                &aff_table.rows[1..4].iter().cloned().collect(),
+                Some(file_base_path)
+            )
+            .unwrap_err(),
+            FileError::RangeContainsDeletedRecord
+        );
 
-        // let data = vec![
-        //     ("AffID", "7"),
-        //     ("AffName", "Eric"),
-        //     ("AffEmail", "eric@doo.com"),
-        //     ("AffPhoneNum", "+886900000007"),
-        // ];
-        // aff_table.insert_row(data).unwrap();
+        let data = vec![
+            ("AffID", "7"),
+            ("AffName", "Eric"),
+            ("AffEmail", "eric@doo.com"),
+            ("AffPhoneNum", "+886900000007"),
+        ];
+        aff_table.insert_row(data).unwrap();
 
-        // let data = vec![
-        //     ("AffID", "8"),
-        //     ("AffName", "Vinc"),
-        //     ("AffEmail", "vinc@doo.com"),
-        //     ("AffPhoneNum", "+886900000008"),
-        // ];
-        // aff_table.insert_row(data).unwrap();
+        let data = vec![
+            ("AffID", "8"),
+            ("AffName", "Vinc"),
+            ("AffEmail", "vinc@doo.com"),
+            ("AffPhoneNum", "+886900000008"),
+        ];
+        aff_table.insert_row(data).unwrap();
 
-        // File::append_rows(
-        //     "crazyguy",
-        //     "BookerDB",
-        //     "Affiliates",
-        //     &aff_table.rows[6..].iter().cloned().collect(),
-        //     Some(file_base_path),
-        // )
-        // .unwrap();
-        // assert_eq!(
-        //     File::modify_rows(
-        //         "crazyguy",
-        //         "BookerDB",
-        //         "Affiliates",
-        //         &vec![6, 9],
-        //         &aff_table.rows[1..4].iter().cloned().collect(),
-        //         Some(file_base_path)
-        //     )
-        //     .unwrap_err(),
-        //     FileError::RangeExceedLatestRecord
-        // );
+        File::append_rows(
+            "crazyguy",
+            "BookerDB",
+            "Affiliates",
+            &aff_table.rows[6..].iter().cloned().collect(),
+            Some(file_base_path),
+        )
+        .unwrap();
 
-        // let rows: Vec<Row> =
-        //     File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![6, 8], Some(file_base_path)).unwrap();
+        assert_eq!(
+            File::modify_rows(
+                "crazyguy",
+                "BookerDB",
+                "Affiliates",
+                &vec![6, 10],
+                &aff_table.rows[1..4].iter().cloned().collect(),
+                Some(file_base_path)
+            )
+            .unwrap_err(),
+            FileError::RangeAndNumRowsMismatch
+        );
 
-        // assert_eq!(rows.len(), 2);
+        assert_eq!(
+            File::modify_rows(
+                "crazyguy",
+                "BookerDB",
+                "Affiliates",
+                &vec![6, 9],
+                &aff_table.rows[1..4].iter().cloned().collect(),
+                Some(file_base_path)
+            )
+            .unwrap_err(),
+            FileError::RangeExceedLatestRecord
+        );
 
-        // for i in 0..2 {
-        //     for (attr, val) in aff_table.rows[i + 6].0.iter() {
-        //         assert_eq!(val.clone(), rows[i].0[attr]);
-        //     }
-        // }
+        let rows: Vec<Row> =
+            File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![6, 8], Some(file_base_path)).unwrap();
+
+        assert_eq!(rows.len(), 2);
+
+        for i in 0..2 {
+            for (attr, val) in aff_table.rows[i + 6].0.iter() {
+                assert_eq!(val.clone(), rows[i].0[attr]);
+            }
+        }
     }
 }
