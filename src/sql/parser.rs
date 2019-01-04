@@ -3,6 +3,7 @@ use crate::component::field::Field;
 use crate::component::table::Table;
 use crate::sql::lexer::LexerError;
 use crate::sql::lexer::Scanner;
+use crate::sql::query::Join;
 use crate::sql::query::Node;
 use crate::sql::query::QueryData;
 use crate::sql::query::TopType;
@@ -323,17 +324,44 @@ fn parse_select(iter: &mut Peekable<Iter<Symbol>>) -> Result<QueryData, ParserEr
 
     query_data.tables = get_id_list(iter, false)?;
 
+    loop {
+        match check_token(iter.peek(), Token::InnerJoin)
+            || check_token(iter.peek(), Token::FullOuterJoin)
+            || check_token(iter.peek(), Token::LeftJoin)
+            || check_token(iter.peek(), Token::RightJoin)
+        {
+            true => {
+                let mut join = Join::new(&iter.next().unwrap().name);
+                match iter.next() {
+                    Some(s) if s.token == Token::Identifier => join.table = s.name.clone(),
+                    Some(_) | None => return Err(ParserError::SyntaxError(String::from("invalid select join syntax"))),
+                }
+
+                assert_token(iter.next(), Token::On)?;
+
+                let mut symbols: Vec<&Symbol> = vec![];
+                loop {
+                    match iter.peek() {
+                        Some(s) if s.group == Group::Keyword || s.token == Token::Semicolon => break,
+                        Some(_) => symbols.push(iter.next().unwrap()),
+                        None => break,
+                    }
+                }
+                join.condition = Some(parse_predicate(symbols)?);
+
+                query_data.joins.push(join);
+            }
+            false => break,
+        }
+    }
+
     match iter.peek() {
         Some(s) if s.token == Token::Where => {
             let _ = iter.next();
             let mut symbols: Vec<&Symbol> = vec![];
             loop {
                 match iter.peek() {
-                    Some(s)
-                        if s.token == Token::GroupBy || s.token == Token::OrderBy || s.token == Token::Semicolon =>
-                    {
-                        break
-                    }
+                    Some(s) if s.group == Group::Keyword || s.token == Token::Semicolon => break,
                     Some(_) => symbols.push(iter.next().unwrap()),
                     None => break,
                 }
@@ -550,6 +578,7 @@ fn assert_token(sym: Option<&Symbol>, token: Token) -> Result<(), ParserError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sql::query::JoinType;
     use crate::sql::query::*;
     use env_logger;
 
@@ -821,6 +850,25 @@ mod tests {
 
         assert_eq!(sql.querydata.top, TopType::Percent(50.0));
         assert_eq!(sql.querydata.is_distinct, false);
+    }
+
+    #[test]
+    fn test_parser_select_join() {
+        let mut sql = fake_sql();
+
+        let query = "select t1.a1, t1.a2, t1.a3 from t1 inner join t2 on t1.a1 = t2.a1 left join t3 on t1.a1 = t3.a1;";
+        let parser = Parser::new(query).unwrap();
+        parser.parse(&mut sql).unwrap();
+
+        assert_eq!(
+            sql.querydata.fields,
+            vec![String::from("t1.a1"), String::from("t1.a2"), String::from("t1.a3")]
+        );
+        assert_eq!(sql.querydata.tables, vec![String::from("t1")]);
+        assert_eq!(sql.querydata.joins[0].join_type, JoinType::InnerJoin);
+        assert_eq!(sql.querydata.joins[0].table, "t2".to_string());
+        assert_eq!(sql.querydata.joins[1].join_type, JoinType::LeftJoin);
+        assert_eq!(sql.querydata.joins[1].table, "t3".to_string());
     }
 
 }

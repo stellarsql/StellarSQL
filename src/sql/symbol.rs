@@ -72,6 +72,7 @@ pub enum Token {
     Like,
     Limit,
     NotNull,
+    On,
     OrderBy,
     Percent,
     PrimaryKey,
@@ -196,6 +197,7 @@ lazy_static! {
         m.insert("like", sym("like", Token::Like, Group::Keyword));
         m.insert("limit", sym("limit", Token::Limit, Group::Keyword));
         m.insert("not null", sym("not null", Token::NotNull, Group::Keyword));
+        m.insert("on", sym("on", Token::On, Group::Keyword));
         m.insert("order by", sym("order by", Token::OrderBy, Group::Keyword));
         m.insert("percent", sym("percent", Token::Percent, Group::Keyword));
         m.insert("primary key", sym("primary key", Token::PrimaryKey, Group::Keyword));

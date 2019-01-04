@@ -3,6 +3,7 @@
 pub struct QueryData {
     pub fields: Vec<String>,
     pub tables: Vec<String>,
+    pub joins: Vec<Join>,
     pub predicate: Option<Box<Node>>,
     pub group_fields: Vec<String>,
     pub aggregation_fn: Vec<String>,
@@ -17,6 +18,7 @@ impl QueryData {
         QueryData {
             fields: vec![],
             tables: vec![],
+            joins: vec![],
             predicate: None,
             group_fields: vec![],
             aggregation_fn: vec![],
@@ -41,6 +43,44 @@ pub enum TopType {
     Percent(f32),
     Number(u32),
     None,
+}
+
+#[derive(Debug)]
+pub struct Join {
+    pub join_type: JoinType,
+    pub table: String,
+    pub condition: Option<Box<Node>>,
+}
+
+impl Join {
+    pub fn new(name: &str) -> Join {
+        Join {
+            join_type: JoinType::get(name).unwrap(),
+            table: "".to_string(),
+            condition: None,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum JoinType {
+    InnerJoin,
+    FullOuterJoin,
+    RightJoin,
+    LeftJoin,
+}
+
+impl JoinType {
+    fn get(name: &str) -> Option<JoinType> {
+        let t = match name {
+            "inner join" => JoinType::InnerJoin,
+            "full outer join" => JoinType::FullOuterJoin,
+            "left join" => JoinType::LeftJoin,
+            "right join" => JoinType::RightJoin,
+            _ => return None,
+        };
+        Some(t)
+    }
 }
 
 #[derive(Default, Debug)]
