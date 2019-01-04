@@ -32,6 +32,7 @@ pub enum FileError {
     TablesJsonNotExists,
     TableExists,
     TableNotExists,
+    TableBinNotExists,
     TableTsvNotExists,
     JsonParse,
     RangeContainsDeletedRecord,
@@ -124,6 +125,7 @@ impl fmt::Display for FileError {
             FileError::TablesJsonNotExists => write!(f, "The `tables.json` of the DB is lost."),
             FileError::TableExists => write!(f, "Table already exists and cannot be created again."),
             FileError::TableNotExists => write!(f, "Table not exists. Please create table first."),
+            FileError::TableBinNotExists => write!(f, "Table exists but correspoding bin file is lost."),
             FileError::TableTsvNotExists => write!(f, "Table exists but correspoding tsv file is lost."),
             FileError::JsonParse => write!(f, "JSON parsing error."),
             FileError::RangeContainsDeletedRecord => write!(f, "The range of rows to fetch contains deleted records."),
@@ -439,16 +441,6 @@ impl File {
         }
         new_table_meta.row_length = curr_offset;
 
-        // create corresponding tsv for the table, with the title line
-        let table_tsv_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_tsv);
-        let mut table_tsv_file = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(table_tsv_path)?;
-        table_tsv_file.write_all(new_table_meta.attrs_order.join("\t").as_bytes())?;
-
         // create corresponding bin for the table, which is empty
         let table_bin_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_bin);
         let mut table_bin_file = fs::OpenOptions::new()
@@ -458,6 +450,19 @@ impl File {
             .truncate(true)
             .open(table_bin_path)?;
         table_bin_file.write_all("".as_bytes())?;
+
+        // perform equivalent operation on table tsv
+        if dotenv!("ENABLE_TSV") == "true" {
+            // create corresponding tsv for the table, with the title line
+            let table_tsv_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_tsv);
+            let mut table_tsv_file = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(table_tsv_path)?;
+            table_tsv_file.write_all(new_table_meta.attrs_order.join("\t").as_bytes())?;
+        }
 
         // insert the new table record into `tables.json`
         tables_json.tables.push(new_table_meta);
@@ -570,16 +575,19 @@ impl File {
             None => return Err(FileError::TableNotExists),
         };
 
-        // remove corresponding tsv file
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        if Path::new(&table_tsv_path).exists() {
-            fs::remove_file(&table_tsv_path)?;
-        }
-
         // remove corresponding bin file
         let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
         if Path::new(&table_bin_path).exists() {
             fs::remove_file(&table_bin_path)?;
+        }
+
+        // perform equivalent operation on table tsv
+        if dotenv!("ENABLE_TSV") == "true" {
+            // remove corresponding tsv file
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            if Path::new(&table_tsv_path).exists() {
+                fs::remove_file(&table_tsv_path)?;
+            }
         }
 
         // overwrite `tables.json`
@@ -622,24 +630,6 @@ impl File {
             None => return Err(FileError::TableNotExists),
         };
 
-        // create chunk of rows to be inserted
-        let mut chunk = String::new();
-        for row in rows {
-            // set `__valid__` to 1
-            let mut raw_row = vec!["1".to_string()];
-            let attrs = table_meta_target.attrs_order[1..]
-                .iter()
-                .map(|attr| row.0.get(attr).unwrap().clone())
-                .collect::<Vec<String>>();
-            raw_row.extend_from_slice(&attrs);
-            chunk += &("\n".to_string() + &raw_row.join("\t"));
-        }
-
-        // append chunk to table tsv
-        let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
-        let mut table_tsv_file = fs::OpenOptions::new().append(true).open(table_tsv_path)?;
-        table_tsv_file.write_all(chunk.as_bytes())?;
-
         // create chunk of bytes to be inserted
         let mut chunk_bytes = vec![];
         for row in rows {
@@ -657,6 +647,27 @@ impl File {
         let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
         let mut table_bin_file = fs::OpenOptions::new().append(true).open(table_bin_path)?;
         table_bin_file.write_all(&chunk_bytes)?;
+
+        // perform equivalent operation on table tsv
+        if dotenv!("ENABLE_TSV") == "true" {
+            // create chunk of rows to be inserted
+            let mut chunk = String::new();
+            for row in rows {
+                // set `__valid__` to 1
+                let mut raw_row = vec!["1".to_string()];
+                let attrs = table_meta_target.attrs_order[1..]
+                    .iter()
+                    .map(|attr| row.0.get(attr).unwrap().clone())
+                    .collect::<Vec<String>>();
+                raw_row.extend_from_slice(&attrs);
+                chunk += &("\n".to_string() + &raw_row.join("\t"));
+            }
+
+            // append chunk to table tsv
+            let table_tsv_path = format!("{}/{}/{}/{}.tsv", base_path, username, db_name, table_name);
+            let mut table_tsv_file = fs::OpenOptions::new().append(true).open(table_tsv_path)?;
+            table_tsv_file.write_all(chunk.as_bytes())?;
+        }
 
         Ok(())
     }
@@ -1080,10 +1091,18 @@ impl File {
             return Err(FileError::TableNotExists);
         }
 
-        // check if table tsv exists
-        let table_tsv_path = format!("{}/{}.tsv", db_path, table_name.unwrap());
-        if !Path::new(&table_tsv_path).exists() {
-            return Err(FileError::TableTsvNotExists);
+        // check if table bin exists
+        let table_bin_path = format!("{}/{}.bin", db_path, table_name.unwrap());
+        if !Path::new(&table_bin_path).exists() {
+            return Err(FileError::TableBinNotExists);
+        }
+
+        if dotenv!("ENABLE_TSV") == "true" {
+            // check if table tsv exists
+            let table_tsv_path = format!("{}/{}.tsv", db_path, table_name.unwrap());
+            if !Path::new(&table_tsv_path).exists() {
+                return Err(FileError::TableTsvNotExists);
+            }
         }
 
         Ok(())
@@ -1495,16 +1514,6 @@ mod tests {
 
         assert!(Path::new(&format!(
             "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .exists());
-        assert!(Path::new(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
-        ))
-        .exists());
-        assert!(Path::new(&format!(
-            "{}/{}/{}/{}",
             file_base_path, "crazyguy", "BookerDB", "Affiliates.bin"
         ))
         .exists());
@@ -1514,18 +1523,31 @@ mod tests {
         ))
         .exists());
 
-        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .unwrap()
-        .split('\t')
-        .map(|s| s.to_string())
-        .collect();
+        if dotenv!("ENABLE_TSV") == "true" {
+            assert!(Path::new(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .exists());
+            assert!(Path::new(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
+            ))
+            .exists());
 
-        assert_eq!(aff_tsv_content[0], "__valid__".to_string());
-        assert_eq!(aff_tsv_content[1], "AffID".to_string());
-        assert_eq!(aff_tsv_content.len(), 5);
+            let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .unwrap()
+            .split('\t')
+            .map(|s| s.to_string())
+            .collect();
+
+            assert_eq!(aff_tsv_content[0], "__valid__".to_string());
+            assert_eq!(aff_tsv_content[1], "AffID".to_string());
+            assert_eq!(aff_tsv_content.len(), 5);
+        }
 
         assert_eq!(
             File::create_table("happyguy", "BookerDB", &htl_table, Some(file_base_path)).unwrap_err(),
@@ -1544,14 +1566,17 @@ mod tests {
 
         assert!(!Path::new(&format!(
             "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .exists());
-        assert!(!Path::new(&format!(
-            "{}/{}/{}/{}",
             file_base_path, "crazyguy", "BookerDB", "Affiliates.bin"
         ))
         .exists());
+
+        if dotenv!("ENABLE_TSV") == "true" {
+            assert!(!Path::new(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .exists());
+        }
 
         let tables = File::load_tables_meta("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
@@ -1566,14 +1591,17 @@ mod tests {
 
         assert!(!Path::new(&format!(
             "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
-        ))
-        .exists());
-        assert!(!Path::new(&format!(
-            "{}/{}/{}/{}",
             file_base_path, "crazyguy", "BookerDB", "Hotels.bin"
         ))
         .exists());
+
+        if dotenv!("ENABLE_TSV") == "true" {
+            assert!(!Path::new(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Hotels.tsv"
+            ))
+            .exists());
+        }
 
         let tables = File::load_tables_meta("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
@@ -1648,17 +1676,19 @@ mod tests {
         )
         .unwrap();
 
-        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .unwrap()
-        .split('\n')
-        .map(|s| s.to_string())
-        .collect();
+        if dotenv!("ENABLE_TSV") == "true" {
+            let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .unwrap()
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect();
 
-        assert_eq!(aff_tsv_content.len(), 2);
-        assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+            assert_eq!(aff_tsv_content.len(), 2);
+            assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+        }
 
         let data = vec![
             ("AffID", "2"),
@@ -1684,19 +1714,21 @@ mod tests {
         )
         .unwrap();
 
-        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .unwrap()
-        .split('\n')
-        .map(|s| s.to_string())
-        .collect();
+        if dotenv!("ENABLE_TSV") == "true" {
+            let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .unwrap()
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect();
 
-        assert_eq!(aff_tsv_content.len(), 4);
-        assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
-        assert_eq!(aff_tsv_content[2], "1\t2\tben@foo.com\tBen\t+886900000002".to_string());
-        assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+            assert_eq!(aff_tsv_content.len(), 4);
+            assert_eq!(aff_tsv_content[1], "1\t1\ttom@foo.com\tTom\t+886900000001".to_string());
+            assert_eq!(aff_tsv_content[2], "1\t2\tben@foo.com\tBen\t+886900000002".to_string());
+            assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
+        }
 
         let rows: Vec<Row> =
             File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 1], Some(file_base_path)).unwrap();
@@ -1797,16 +1829,18 @@ mod tests {
         )
         .unwrap();
 
-        let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
-            "{}/{}/{}/{}",
-            file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
-        ))
-        .unwrap()
-        .split('\n')
-        .map(|s| s.to_string())
-        .collect();
+        if dotenv!("ENABLE_TSV") == "true" {
+            let aff_tsv_content: Vec<String> = fs::read_to_string(&format!(
+                "{}/{}/{}/{}",
+                file_base_path, "crazyguy", "BookerDB", "Affiliates.tsv"
+            ))
+            .unwrap()
+            .split('\n')
+            .map(|s| s.to_string())
+            .collect();
 
-        assert_eq!(aff_tsv_content.len(), 7);
+            assert_eq!(aff_tsv_content.len(), 7);
+        }
 
         assert_eq!(
             File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 7], Some(file_base_path)).unwrap_err(),
