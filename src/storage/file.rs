@@ -82,6 +82,7 @@ pub struct TableMeta {
     pub attrs: HashMap<String, Field>,
     path_tsv: String,
     path_bin: String,
+    row_length: u32,
     attrs_order: Vec<String>,
     attr_offset_ranges: Vec<Vec<u32>>,
 }
@@ -396,6 +397,7 @@ impl File {
             foreign_key: table.foreign_key.clone(),
             reference_table: table.reference_table.clone(),
             reference_attr: table.reference_attr.clone(),
+            row_length: 0,
             attrs_order: vec![],
             attrs: table.fields.clone(),
             attr_offset_ranges: vec![],
@@ -422,15 +424,16 @@ impl File {
             .iter()
             .map(|attr_name| File::get_datatype_size(&new_table_meta.attrs[attr_name].datatype))
             .collect();
+
         // `__valid__` attr occupies 1 byte
         let mut curr_offset = 1;
-
         for attr_size in attr_sizes {
             new_table_meta
                 .attr_offset_ranges
                 .push(vec![curr_offset, curr_offset + attr_size]);
             curr_offset += attr_size;
         }
+        new_table_meta.row_length = curr_offset;
 
         // create corresponding tsv for the table, with the title line
         let table_tsv_path = format!("{}/{}/{}/{}", base_path, username, db_name, new_table_meta.path_tsv);
@@ -1305,6 +1308,7 @@ mod tests {
                 path_tsv: "Affiliates.tsv".to_string(),
                 path_bin: "Affiliates.bin".to_string(),
                 attr_offset_ranges: vec![vec![0, 1], vec![1, 5], vec![5, 55], vec![55, 95], vec![95, 115]],
+                row_length: 115,
                 // ignore attrs checking
                 attrs_order: vec![],
                 attrs: HashMap::new(),
@@ -1318,6 +1322,7 @@ mod tests {
                 path_tsv: "Hotels.tsv".to_string(),
                 path_bin: "Hotels.bin".to_string(),
                 attr_offset_ranges: vec![vec![0, 1], vec![1, 5], vec![5, 55], vec![55, 95], vec![95, 115]],
+                row_length: 115,
                 // ignore attrs checking
                 attrs_order: vec![],
                 attrs: HashMap::new(),
@@ -1344,6 +1349,7 @@ mod tests {
             assert_eq!(tables[i].foreign_key, ideal_tables[i].foreign_key);
             assert_eq!(tables[i].reference_table, ideal_tables[i].reference_table);
             assert_eq!(tables[i].reference_attr, ideal_tables[i].reference_attr);
+            assert_eq!(tables[i].row_length, ideal_tables[i].row_length);
             assert_eq!(tables[i].path_tsv, ideal_tables[i].path_tsv);
             assert_eq!(tables[i].path_bin, ideal_tables[i].path_bin);
             assert_eq!(tables[i].attr_offset_ranges, ideal_tables[i].attr_offset_ranges);
