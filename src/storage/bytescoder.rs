@@ -25,6 +25,7 @@ pub enum BytesCoderError {
     ParseFloat,
     StringLength,
     StringDecode,
+    AttrNotExists,
 }
 
 // Implement the `trim` method for byte slices
@@ -88,6 +89,7 @@ impl fmt::Display for BytesCoderError {
             }
             BytesCoderError::StringLength => write!(f, "The string attempt to store exceed the size of field."),
             BytesCoderError::StringDecode => write!(f, "Error occurred during decoding utf8 String from bytes."),
+            BytesCoderError::AttrNotExists => write!(f, "The row does not contain specified attribute."),
         }
     }
 }
@@ -135,7 +137,10 @@ impl BytesCoder {
         // set `__valid__` to 1
         let mut row_bytes = vec![1];
         for attr in tablemeta.attrs_order[1..].iter() {
-            let attr_bytes = BytesCoder::attr_to_bytes(&tablemeta.attrs[attr].datatype, row.0.get(attr).unwrap())?;
+            let attr_bytes = BytesCoder::attr_to_bytes(
+                &tablemeta.attrs[attr].datatype,
+                row.0.get(attr).ok_or_else(|| BytesCoderError::AttrNotExists)?,
+            )?;
             row_bytes.extend_from_slice(&attr_bytes);
         }
 

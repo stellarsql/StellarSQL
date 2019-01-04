@@ -38,6 +38,7 @@ pub enum FileError {
     RangeContainsDeletedRecord,
     RangeExceedLatestRecord,
     RangeAndNumRowsMismatch,
+    AttrNotExists,
     BytesError,
 }
 
@@ -135,6 +136,7 @@ impl fmt::Display for FileError {
             FileError::RangeAndNumRowsMismatch => {
                 write!(f, "The range of rows does not match number of rows to be modified.")
             }
+            FileError::AttrNotExists => write!(f, "The row does not contain specified attribute."),
             FileError::BytesError => write!(f, "Error raised from BytesCoder."),
         }
     }
@@ -648,11 +650,9 @@ impl File {
             for row in rows {
                 // set `__valid__` to 1
                 let mut raw_row = vec!["1".to_string()];
-                let attrs = table_meta_target.attrs_order[1..]
-                    .iter()
-                    .map(|attr| row.0.get(attr).unwrap().clone())
-                    .collect::<Vec<String>>();
-                raw_row.extend_from_slice(&attrs);
+                for attr in table_meta_target.attrs_order[1..].iter() {
+                    raw_row.push(row.0.get(attr).ok_or_else(|| FileError::AttrNotExists)?.clone());
+                }
                 chunk += &("\n".to_string() + &raw_row.join("\t"));
             }
 
@@ -922,11 +922,9 @@ impl File {
             for row in new_rows {
                 // set `__valid__` to 1
                 let mut raw_row = vec!["1".to_string()];
-                let attrs = table_meta_target.attrs_order[1..]
-                    .iter()
-                    .map(|attr| row.0.get(attr).unwrap().clone())
-                    .collect::<Vec<String>>();
-                raw_row.extend_from_slice(&attrs);
+                for attr in table_meta_target.attrs_order[1..].iter() {
+                    raw_row.push(row.0.get(attr).ok_or_else(|| FileError::AttrNotExists)?.clone());
+                }
                 modified_content.push(raw_row.join("\t"));
             }
 
