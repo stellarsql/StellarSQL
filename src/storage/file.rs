@@ -651,7 +651,7 @@ impl File {
                 // set `__valid__` to 1
                 let mut raw_row = vec!["1".to_string()];
                 for attr in table_meta_target.attrs_order[1..].iter() {
-                    raw_row.push(row.0.get(attr).ok_or_else(|| FileError::AttrNotExists)?.clone());
+                    raw_row.push(row.data.get(attr).ok_or_else(|| FileError::AttrNotExists)?.clone());
                 }
                 chunk += &("\n".to_string() + &raw_row.join("\t"));
             }
@@ -732,7 +732,7 @@ impl File {
         //     let mut new_row = Row::new();
         //     for i in 1..raw_line.len() {
         //         new_row
-        //             .0
+        //             .data
         //             .insert(table_meta_target.attrs_order[i].clone(), raw_line[i].clone());
         //     }
         //     rows.push(new_row);
@@ -923,7 +923,7 @@ impl File {
                 // set `__valid__` to 1
                 let mut raw_row = vec!["1".to_string()];
                 for attr in table_meta_target.attrs_order[1..].iter() {
-                    raw_row.push(row.0.get(attr).ok_or_else(|| FileError::AttrNotExists)?.clone());
+                    raw_row.push(row.data.get(attr).ok_or_else(|| FileError::AttrNotExists)?.clone());
                 }
                 modified_content.push(raw_row.join("\t"));
             }
@@ -1705,8 +1705,8 @@ mod tests {
 
         assert_eq!(rows.len(), 1);
 
-        for (attr, val) in aff_table.rows[0].0.iter() {
-            assert_eq!(val.clone(), rows[0].0[attr]);
+        for (attr, val) in aff_table.rows[0].data.iter() {
+            assert_eq!(val.clone(), rows[0].data[attr]);
         }
 
         let rows: Vec<Row> =
@@ -1715,8 +1715,8 @@ mod tests {
         assert_eq!(rows.len(), 3);
 
         for i in 0..3 {
-            for (attr, val) in aff_table.rows[i].0.iter() {
-                assert_eq!(val.clone(), rows[i].0[attr]);
+            for (attr, val) in aff_table.rows[i].data.iter() {
+                assert_eq!(val.clone(), rows[i].data[attr]);
             }
         }
 
@@ -1726,8 +1726,8 @@ mod tests {
         assert_eq!(rows.len(), 2);
 
         for i in 0..2 {
-            for (attr, val) in aff_table.rows[i + 1].0.iter() {
-                assert_eq!(val.clone(), rows[i].0[attr]);
+            for (attr, val) in aff_table.rows[i + 1].data.iter() {
+                assert_eq!(val.clone(), rows[i].data[attr]);
             }
         }
 
@@ -1830,14 +1830,14 @@ mod tests {
         assert_eq!(rows.len(), 3);
 
         for i in 0..3 {
-            for (attr, val) in aff_table.rows[i + 2].0.iter() {
-                assert_eq!(val.clone(), rows[i].0[attr]);
+            for (attr, val) in aff_table.rows[i + 2].data.iter() {
+                assert_eq!(val.clone(), rows[i].data[attr]);
             }
         }
 
-        *aff_table.rows[2].0.get_mut("AffName").unwrap() = "Leow".to_string();
-        *aff_table.rows[4].0.get_mut("AffEmail").unwrap() = "raymond@dee.com".to_string();
-        *aff_table.rows[4].0.get_mut("AffPhoneNum").unwrap() = "+886900000015".to_string();
+        *aff_table.rows[2].data.get_mut("AffName").unwrap() = "Leow".to_string();
+        *aff_table.rows[4].data.get_mut("AffEmail").unwrap() = "raymond@dee.com".to_string();
+        *aff_table.rows[4].data.get_mut("AffPhoneNum").unwrap() = "+886900000015".to_string();
         File::modify_rows(
             "crazyguy",
             "BookerDB",
@@ -1854,8 +1854,8 @@ mod tests {
         assert_eq!(rows.len(), 3);
 
         for i in 0..3 {
-            for (attr, val) in aff_table.rows[i + 2].0.iter() {
-                assert_eq!(val.clone(), rows[i].0[attr]);
+            for (attr, val) in aff_table.rows[i + 2].data.iter() {
+                assert_eq!(val.clone(), rows[i].data[attr]);
             }
         }
 
@@ -1929,8 +1929,8 @@ mod tests {
         assert_eq!(rows.len(), 2);
 
         for i in 0..2 {
-            for (attr, val) in aff_table.rows[i + 6].0.iter() {
-                assert_eq!(val.clone(), rows[i].0[attr]);
+            for (attr, val) in aff_table.rows[i + 6].data.iter() {
+                assert_eq!(val.clone(), rows[i].data[attr]);
             }
         }
     }

@@ -47,12 +47,14 @@ impl SQL {
         Ok(())
     }
 
+    // TODO: check db delete bit
     /// Load the database and create a new table
     pub fn create_table(&mut self, table: &Table) -> Result<(), SQLError> {
         self.database.insert_new_table(table.clone());
         Ok(())
     }
 
+    // TODO: check db, table delete bit
     /// Insert new rows into the table
     pub fn insert_into_table(
         &mut self,

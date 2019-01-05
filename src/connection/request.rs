@@ -1,19 +1,23 @@
-use crate::sql::parser::Parser;
-use crate::sql::parser::ParserError;
-use crate::sql::worker::SQLError;
-use crate::sql::worker::SQL;
+use crate::manager::pool::{Pool, PoolError};
+use crate::sql::parser::{Parser, ParserError};
+use crate::storage::file::{File, FileError};
 use crate::Response;
 use std::fmt;
 
+use std::sync::{Arc, Mutex};
+
 #[derive(Debug)]
-pub struct Request {}
+pub struct Request {
+    pub username: String,
+    pub addr: String,
+}
 
 #[derive(Debug)]
 pub enum RequestError {
-    SQLError(SQLError),
+    PoolError(PoolError),
     CauseByParser(ParserError),
+    FileError(FileError),
     UserNotExist(String),
-    // DBNotExist(String),
     CreateDBBeforeCmd,
     BadRequest,
 }
@@ -21,10 +25,10 @@ pub enum RequestError {
 impl fmt::Display for RequestError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            RequestError::SQLError(ref e) => write!(f, "error caused by worker: {}", e),
+            RequestError::PoolError(ref e) => write!(f, "error caused by pool: {}", e),
             RequestError::CauseByParser(ref e) => write!(f, "error caused by parser: {}", e),
+            RequestError::FileError(ref e) => write!(f, "error caused by file: {}", e),
             RequestError::UserNotExist(ref s) => write!(f, "user: {} not found", s),
-            // RequestError::DBNotExist(ref s) => write!(f, "database: {} not found", s),
             RequestError::CreateDBBeforeCmd => write!(f, "please create a database before any other commands"),
             RequestError::BadRequest => write!(f, "BadRequest, invalid request format"),
         }
@@ -32,7 +36,13 @@ impl fmt::Display for RequestError {
 }
 
 impl Request {
-    pub fn parse(input: &str, mut sql: &mut SQL) -> Result<Response, RequestError> {
+    pub fn new(new_addr: String) -> Request {
+        Request {
+            username: "".to_string(),
+            addr: new_addr,
+        }
+    }
+    pub fn parse(input: &str, mutex: &Arc<Mutex<Pool>>, req: &mut Request) -> Result<Response, RequestError> {
         /*
          * request format
          * case1:
@@ -51,23 +61,21 @@ impl Request {
         let cmd = format!("{};", split_str[2]);
 
         // initialize username
-        if sql.username == "" {
-            if Request::user_verify(username).is_ok() {
-                sql.username = username.to_string();
-            } else {
-                // user not existed
-                return Err(RequestError::UserNotExist(username.to_string()));
+        if req.username == "" {
+            match Request::user_verify(username) {
+                Ok(()) => req.username = username.to_string(),
+                Err(ret) => return Err(ret),
             }
         }
 
+        // load sql object from memory pool
+        let mut pool = mutex.lock().unwrap();
+        let mut sql = match pool.get(username, dbname, req.addr.clone()) {
+            Ok(tsql) => tsql,
+            Err(ret) => return Err(RequestError::PoolError(ret)),
+        };
         // check dbname
         if dbname != "" {
-            if sql.database.name == "" {
-                match sql.load_database(dbname) {
-                    Err(ret) => return Err(RequestError::SQLError(ret)),
-                    Ok(_) => {}
-                }
-            }
             let parser = Parser::new(&cmd).unwrap();
             match parser.parse(&mut sql) {
                 Err(ret) => return Err(RequestError::CauseByParser(ret)),
@@ -90,9 +98,21 @@ impl Request {
         })
         //Ok(Response::OK { msg: format!("{}, user:{}",input, sql.username) })
     }
-    fn user_verify(name: &str) -> Result<(), ()> {
+    fn user_verify(name: &str) -> Result<(), RequestError> {
+        // auto create new users for now
         if name == "" {
-            return Err(());
+            return Err(RequestError::UserNotExist(name.to_string()));
+        } else {
+            let users = match File::get_usernames(None) {
+                Ok(us) => us,
+                Err(ret) => return Err(RequestError::FileError(ret)),
+            };
+            if !users.contains(&name.to_string()) {
+                match File::create_username(name, None) {
+                    Ok(_) => {}
+                    Err(ret) => return Err(RequestError::FileError(ret)),
+                }
+            }
         }
         Ok(())
     }

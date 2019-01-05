@@ -19,17 +19,26 @@ pub struct Table {
     pub rows: Vec<Row>,
 
     /* storage */
-    is_data_loaded: bool, // if load the data from storage
-    is_dirty: bool,
-    dirty_cursor: u32, // where is the dirty data beginning
+    pub is_data_loaded: bool, // if load the data from storage
+    pub is_dirty: bool,
+    pub dirty_cursor: u32, // where is the dirty data beginning
+    pub is_delete: bool,
 }
 
 #[derive(Debug, Clone)]
-pub struct Row(pub HashMap<String, String>);
+pub struct Row {
+    pub data: HashMap<String, String>,
+    pub is_dirty: bool,
+    pub is_delete: bool,
+}
 
 impl Row {
     pub fn new() -> Row {
-        Row(HashMap::new())
+        Row {
+            data: HashMap::new(),
+            is_dirty: true,
+            is_delete: false,
+        }
     }
 }
 
@@ -74,6 +83,7 @@ impl Table {
             is_data_loaded: false,
             is_dirty: true,
             dirty_cursor: 0,
+            is_delete: false,
         }
     }
 
@@ -96,6 +106,15 @@ impl Table {
         self.foreign_key = meta.foreign_key;
         self.reference_table = meta.reference_table;
         self.reference_attr = meta.reference_attr;
+        self.is_dirty = false;
+    }
+
+    pub fn load_rows_data(&mut self, username: &str, db_name: &str) -> Result<(), TableError> {
+        // TODO: read index file, find all row data range, call fetch_rows
+        //let row_data = File::fetch_rows(username, db_name, self.name, , None).unwrap().map_err(|e| TableError::CauseByFile(e))?;
+        //self.rows = row_data;
+        self.is_data_loaded = true;
+        Ok(())
     }
 
     pub fn insert_new_field(&mut self, field: Field) {
@@ -114,7 +133,7 @@ impl Table {
                     if field.not_null && value == "null" {
                         return Err(TableError::InsertFieldNotNullMismatched(field.clone().name));
                     }
-                    new_row.0.insert(key.to_string(), value.to_string());
+                    new_row.data.insert(key.to_string(), value.to_string());
                 }
                 None => return Err(TableError::InsertFieldNotExisted(key.to_string())),
             }
@@ -122,12 +141,12 @@ impl Table {
 
         // check if the row fits the field
         for (key, field) in self.fields.iter() {
-            match new_row.0.get(key) {
+            match new_row.data.get(key) {
                 Some(_) => {}
                 None => {
                     match field.clone().default {
                         // if the attribute has default value, then insert with the default value.
-                        Some(value) => new_row.0.insert(key.to_string(), value.to_string()),
+                        Some(value) => new_row.data.insert(key.to_string(), value.to_string()),
                         None => return Err(TableError::InsertFieldDefaultMismatched(key.to_string())),
                     };
                 }

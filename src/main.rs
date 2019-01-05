@@ -14,6 +14,7 @@ extern crate log;
 
 mod component;
 mod connection;
+mod manager;
 mod sql;
 mod storage;
 
@@ -24,10 +25,12 @@ use tokio::io::write_all;
 use crate::connection::message;
 use crate::connection::request::Request;
 use crate::connection::response::Response;
-use crate::sql::worker::SQL;
+use crate::manager::pool::Pool;
 use env_logger;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
+
+use std::sync::{Arc, Mutex};
 
 /// The entry of the program
 ///
@@ -50,6 +53,9 @@ fn main() {
 
     let addr = format!("127.0.0.1:{}", port).parse().unwrap();
 
+    lazy_static! {
+        static ref mutex: Arc<Mutex<Pool>> = Arc::new(Mutex::new(Pool::new(dotenv!("POOL_SIZE").parse().unwrap())));
+    }
     // Bind a TCP listener to the socket address.
     // Note that this is the Tokio TcpListener, which is fully async.
     let listener = TcpListener::bind(&addr).unwrap();
@@ -63,7 +69,7 @@ fn main() {
             info!("New Connection: {}", addr);
 
             // Spawn a task to process the connection
-            process(socket);
+            process(socket, &mutex, addr);
 
             Ok(())
         })
@@ -78,12 +84,12 @@ fn main() {
 /// Process the TCP socket connection
 ///
 /// The request message pass to [`Response`](connection/request/index.html) and get [`Response`](connection/response/index.html)
-fn process(socket: TcpStream) {
+fn process(socket: TcpStream, mutex: &'static Arc<Mutex<Pool>>, addr: std::net::SocketAddr) {
     let (reader, writer) = socket.split();
 
     let messages = message::new(BufReader::new(reader));
 
-    let mut sql = SQL::new("").unwrap();
+    let mut requests = Request::new(addr.to_string());
 
     // note the `move` keyword on the closure here which moves ownership
     // of the reference into the closure, which we'll need for spawning the
@@ -93,7 +99,7 @@ fn process(socket: TcpStream) {
     // requests (lines) we receive from the client. The actual handling here
     // is pretty simple, first we parse the request and if it's valid we
     // generate a response.
-    let responses = messages.map(move |message| match Request::parse(&message, &mut sql) {
+    let responses = messages.map(move |message| match Request::parse(&message, &mutex, &mut requests) {
         Ok(req) => req,
         Err(e) => return Response::Error { msg: format!("{}", e) },
     });
@@ -110,7 +116,12 @@ fn process(socket: TcpStream) {
     // `spawn` this client to ensure it
     // runs concurrently with all other clients, for now ignoring any errors
     // that we see.
-    let connection = writes.then(move |_| Ok(()));
+    let connection = writes.then(move |_| {
+        // write back
+        let mut pool = mutex.lock().unwrap();
+        pool.write_back(addr.to_string());
+        Ok(())
+    });
 
     // Spawn the task. Internally, this submits the task to a thread pool.
     tokio::spawn(connection);

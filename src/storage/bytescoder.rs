@@ -139,7 +139,7 @@ impl BytesCoder {
         for attr in tablemeta.attrs_order[1..].iter() {
             let attr_bytes = BytesCoder::attr_to_bytes(
                 &tablemeta.attrs[attr].datatype,
-                row.0.get(attr).ok_or_else(|| BytesCoderError::AttrNotExists)?,
+                row.data.get(attr).ok_or_else(|| BytesCoderError::AttrNotExists)?,
             )?;
             row_bytes.extend_from_slice(&attr_bytes);
         }
@@ -159,7 +159,7 @@ impl BytesCoder {
         let mut new_row = Row::new();
         for i in 0..attr_vals.len() {
             new_row
-                .0
+                .data
                 .insert(tablemeta.attrs_order[i + 1].clone(), attr_vals[i].clone());
         }
 
@@ -284,7 +284,7 @@ mod tests {
 
         let mut row = Row::new();
         for i in 0..data.len() {
-            row.0.insert(data[i].0.to_string(), data[i].1.to_string());
+            row.data.insert(data[i].0.to_string(), data[i].1.to_string());
         }
 
         let reconstructed_row = BytesCoder::bytes_to_row(
@@ -293,8 +293,8 @@ mod tests {
         )
         .unwrap();
 
-        for (attr, val) in row.0.iter() {
-            assert_eq!(val.clone(), reconstructed_row.0[attr]);
+        for (attr, val) in row.data.iter() {
+            assert_eq!(val.clone(), reconstructed_row.data[attr]);
         }
     }
 }

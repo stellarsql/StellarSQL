@@ -8,6 +8,10 @@ use std::fmt;
 pub struct Database {
     pub name: String,
     pub tables: HashMap<String, Table>,
+
+    /* storage */
+    pub is_dirty: bool,
+    pub is_delete: bool,
 }
 
 #[derive(Debug)]
@@ -28,6 +32,8 @@ impl Database {
         Database {
             name: name.to_string(),
             tables: HashMap::new(),
+            is_dirty: true,
+            is_delete: false,
         }
     }
 
@@ -38,6 +44,7 @@ impl Database {
     // load the metadate of the database and its tables
     pub fn load_db(username: &str, db_name: &str) -> Result<Database, DatabaseError> {
         let mut db = Database::new(db_name);
+        db.is_dirty = false;
         let metas = File::load_tables_meta(username, db_name, None).map_err(|e| DatabaseError::CausedByFile(e))?;
         for meta in metas {
             let name = (&meta.name).to_string();
