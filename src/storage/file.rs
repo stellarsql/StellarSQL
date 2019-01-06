@@ -20,6 +20,7 @@ pub struct File {
 #[derive(Debug, PartialEq, Clone)]
 pub enum FileError {
     Io,
+    BaseDirExists,
     BaseDirNotExists,
     UsernamesJsonNotExists,
     UsernameExists,
@@ -112,6 +113,7 @@ impl fmt::Display for FileError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             FileError::Io => write!(f, "No such file or directory."),
+            FileError::BaseDirExists => write!(f, "Base dir already exists and cannot be created again."),
             FileError::BaseDirNotExists => write!(f, "Base data directory not exists. All data lost."),
             FileError::UsernamesJsonNotExists => write!(f, "The file `usernames.json` is lost"),
             FileError::UsernameExists => write!(f, "User name already exists and cannot be created again."),
@@ -144,24 +146,41 @@ impl fmt::Display for FileError {
 
 #[allow(dead_code)]
 impl File {
-    pub fn create_username(username: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
+    pub fn create_file_base(file_base_path: Option<&str>) -> Result<(), FileError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // create base data folder if not exists
         if !Path::new(base_path).exists() {
             fs::create_dir_all(base_path)?;
+        } else {
+            return Err(FileError::BaseDirExists);
         }
 
-        // load current usernames from `usernames.json`
-        let mut usernames_json: UsernamesJson;
+        // create and save an initialized `usernames.json`
+        let usernames_json = UsernamesJson { usernames: Vec::new() };
         let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
-        if Path::new(&usernames_json_path).exists() {
-            let usernames_file = fs::File::open(&usernames_json_path)?;
-            usernames_json = serde_json::from_reader(usernames_file)?;
-        } else {
-            usernames_json = UsernamesJson { usernames: Vec::new() };
-        }
+        let mut usernames_file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(usernames_json_path)?;
+        usernames_file.write_all(serde_json::to_string_pretty(&usernames_json)?.as_bytes())?;
+
+        Ok(())
+    }
+
+    pub fn create_username(username: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+        // perform storage check toward base level
+        File::storage_hierarchy_check(base_path, None, None, None).map_err(|e| e)?;
+
+        // load current usernames from `usernames.json`
+        let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
+        let usernames_file = fs::File::open(&usernames_json_path)?;
+        let mut usernames_json: UsernamesJson = serde_json::from_reader(usernames_file)?;
 
         // check if the username exists
         for username_info in &usernames_json.usernames {
@@ -1095,19 +1114,37 @@ mod tests {
     use crate::component::datatype::DataType;
     use crate::component::field;
     #[test]
-    pub fn test_create_username() {
-        let file_base_path = "data1";
+    pub fn test_create_file_base() {
+        let file_base_path = "data0";
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
-        File::create_username("crazyguy", Some(file_base_path)).unwrap();
-        File::create_username("happyguy", Some(file_base_path)).unwrap();
+
+        File::create_file_base(Some(file_base_path)).unwrap();
 
         assert!(Path::new(file_base_path).exists());
 
         let usernames_json_path = format!("{}/{}", file_base_path, "usernames.json");
         assert!(Path::new(&usernames_json_path).exists());
 
+        assert_eq!(
+            File::create_file_base(Some(file_base_path)).unwrap_err(),
+            FileError::BaseDirExists
+        );
+    }
+
+    #[test]
+    pub fn test_create_username() {
+        let file_base_path = "data1";
+        if Path::new(file_base_path).exists() {
+            fs::remove_dir_all(file_base_path).unwrap();
+        }
+
+        File::create_file_base(Some(file_base_path)).unwrap();
+        File::create_username("crazyguy", Some(file_base_path)).unwrap();
+        File::create_username("happyguy", Some(file_base_path)).unwrap();
+
+        let usernames_json_path = format!("{}/{}", file_base_path, "usernames.json");
         let usernames_json = fs::read_to_string(usernames_json_path).unwrap();
         let usernames_json: UsernamesJson = serde_json::from_str(&usernames_json).unwrap();
 
@@ -1152,6 +1189,8 @@ mod tests {
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
+
+        File::create_file_base(Some(file_base_path)).unwrap();
         File::create_username("crazyguy", Some(file_base_path)).unwrap();
         File::create_username("happyguy", Some(file_base_path)).unwrap();
 
@@ -1165,6 +1204,8 @@ mod tests {
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
+
+        File::create_file_base(Some(file_base_path)).unwrap();
         File::create_username("crazyguy", Some(file_base_path)).unwrap();
         File::create_username("happyguy", Some(file_base_path)).unwrap();
         File::create_username("sadguy", Some(file_base_path)).unwrap();
@@ -1199,6 +1240,8 @@ mod tests {
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
+
+        File::create_file_base(Some(file_base_path)).unwrap();
         File::create_username("crazyguy", Some(file_base_path)).unwrap();
         File::create_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
         File::create_db("crazyguy", "MovieDB", Some(file_base_path)).unwrap();
@@ -1267,6 +1310,7 @@ mod tests {
             fs::remove_dir_all(file_base_path).unwrap();
         }
 
+        File::create_file_base(Some(file_base_path)).unwrap();
         File::create_username("happyguy", Some(file_base_path)).unwrap();
 
         let dbs: Vec<String> = File::get_dbs("happyguy", Some(file_base_path)).unwrap();
@@ -1294,6 +1338,8 @@ mod tests {
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
+
+        File::create_file_base(Some(file_base_path)).unwrap();
         File::create_username("crazyguy", Some(file_base_path)).unwrap();
         File::create_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
         File::create_db("crazyguy", "MovieDB", Some(file_base_path)).unwrap();
@@ -1338,6 +1384,8 @@ mod tests {
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
+
+        File::create_file_base(Some(file_base_path)).unwrap();
         File::create_username("crazyguy", Some(file_base_path)).unwrap();
         File::create_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
@@ -1584,6 +1632,8 @@ mod tests {
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
         }
+
+        File::create_file_base(Some(file_base_path)).unwrap();
         File::create_username("crazyguy", Some(file_base_path)).unwrap();
         File::create_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
 
