@@ -45,13 +45,35 @@ impl Request {
     pub fn parse(input: &str, mutex: &Arc<Mutex<Pool>>, req: &mut Request) -> Result<Response, RequestError> {
         /*
          * request format
-         * case1:
-         * username||databasename||command;
-         * case2:
-         * username||||create dbname;
+         * case0: init (must be first request in each connection)
+         * username||||||key
+         * case1: normal
+         * username||dbname||command;
+         * case2: user without a database
+         * username||||create database dbname;
          *
          */
         let split_str: Vec<&str> = input.split("||").collect();
+
+        // first connection
+        if req.username == "" {
+            if split_str.len() != 4 || split_str[1] != "" || split_str[2] != "" {
+                return Err(RequestError::BadRequest);
+            }
+            let username = split_str[0];
+            let key = split_str[3];
+            // TODO: save key
+
+            // initialize username
+            match Request::user_verify(username) {
+                Ok(()) => req.username = username.to_string(),
+                Err(ret) => return Err(ret),
+            }
+            return Ok(Response::OK {
+                msg: "Login OK!".to_string(),
+            });
+        }
+
         if split_str.len() != 3 {
             return Err(RequestError::BadRequest);
         }
@@ -59,14 +81,6 @@ impl Request {
         let username = split_str[0];
         let dbname = split_str[1];
         let cmd = format!("{};", split_str[2]);
-
-        // initialize username
-        if req.username == "" {
-            match Request::user_verify(username) {
-                Ok(()) => req.username = username.to_string(),
-                Err(ret) => return Err(ret),
-            }
-        }
 
         // load sql object from memory pool
         let mut pool = mutex.lock().unwrap();
@@ -103,12 +117,12 @@ impl Request {
         if name == "" {
             return Err(RequestError::UserNotExist(name.to_string()));
         } else {
-            let users = match File::get_usernames(None) {
+            let users = match File::get_usernames(Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(us) => us,
                 Err(ret) => return Err(RequestError::FileError(ret)),
             };
             if !users.contains(&name.to_string()) {
-                match File::create_username(name, None) {
+                match File::create_username(name, Some(dotenv!("FILE_BASE_PATH"))) {
                     Ok(_) => {}
                     Err(ret) => return Err(RequestError::FileError(ret)),
                 }

@@ -30,6 +30,8 @@ use env_logger;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 
+use crate::storage::file::File;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 /// The entry of the program
@@ -40,6 +42,8 @@ fn main() {
 
     // start logger
     env_logger::init();
+
+    env_init();
 
     // Parse arguments
     let yml = load_yaml!("../cli.yml");
@@ -79,6 +83,14 @@ fn main() {
 
     info!("StellarSQL running on {} port", port);
     tokio::run(server);
+}
+
+fn env_init() {
+    // check ../.env: FILE_BASE_PATH, create usernames.json
+    let path = dotenv!("FILE_BASE_PATH");
+    if !Path::new(path).exists() {
+        File::create_file_base(Some(path));
+    }
 }
 
 /// Process the TCP socket connection
