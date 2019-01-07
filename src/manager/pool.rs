@@ -1,6 +1,7 @@
 use crate::component::table::Row;
 use crate::sql::worker::{SQLError, SQL};
-use crate::storage::file::{File, FileError};
+use crate::storage::diskinterface::DiskError;
+use crate::storage::file::File;
 use std::fmt;
 
 use std::collections::{BTreeMap, VecDeque};
@@ -19,7 +20,7 @@ pub struct Pool {
 pub enum PoolError {
     SQLError(SQLError),
     EntryNotExist,
-    FileError(FileError),
+    DiskError(DiskError),
 }
 
 impl fmt::Display for PoolError {
@@ -27,7 +28,7 @@ impl fmt::Display for PoolError {
         match *self {
             PoolError::SQLError(ref e) => write!(f, "error cause by worker: {}", e),
             PoolError::EntryNotExist => write!(f, "entry is not existed"),
-            PoolError::FileError(ref e) => write!(f, "error cause by file: {}", e),
+            PoolError::DiskError(ref e) => write!(f, "error cause by file: {}", e),
         }
     }
 }
@@ -111,13 +112,13 @@ impl Pool {
         if sql.database.is_delete {
             match File::remove_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(_) => return Ok(()),
-                Err(e) => return Err(PoolError::FileError(e)),
+                Err(e) => return Err(PoolError::DiskError(e)),
             }
         }
         if sql.database.is_dirty {
             match File::create_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(_) => {}
-                Err(e) => return Err(PoolError::FileError(e)),
+                Err(e) => return Err(PoolError::DiskError(e)),
             }
         }
         // 2. check dirty bit of tables
@@ -130,7 +131,7 @@ impl Pool {
                     Some(dotenv!("FILE_BASE_PATH")),
                 ) {
                     Ok(_) => {}
-                    Err(e) => return Err(PoolError::FileError(e)),
+                    Err(e) => return Err(PoolError::DiskError(e)),
                 }
                 continue;
             }
@@ -142,7 +143,7 @@ impl Pool {
                     Some(dotenv!("FILE_BASE_PATH")),
                 ) {
                     Ok(_) => {}
-                    Err(e) => return Err(PoolError::FileError(e)),
+                    Err(e) => return Err(PoolError::DiskError(e)),
                 }
             }
             // 3. check dirty bit of rows

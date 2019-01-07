@@ -1,6 +1,6 @@
 use crate::component::table::Table;
+use crate::storage::diskinterface::DiskError;
 use crate::storage::file::File;
-use crate::storage::file::FileError;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -16,7 +16,7 @@ pub struct Database {
 
 #[derive(Debug)]
 pub enum DatabaseError {
-    CausedByFile(FileError),
+    CausedByFile(DiskError),
 }
 
 impl fmt::Display for DatabaseError {

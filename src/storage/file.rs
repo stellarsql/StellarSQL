@@ -2,13 +2,12 @@ use crate::component::datatype::DataType;
 use crate::component::field::Field;
 use crate::component::table::Row;
 use crate::component::table::Table;
-use crate::storage::bytescoder;
 use crate::storage::bytescoder::BytesCoder;
-use crate::storage::diskinterface::TableMeta;
+use crate::storage::diskinterface::{
+    DbInfo, DbsJson, DiskError, DiskInterface, TableMeta, TablesJson, UsernameInfo, UsernamesJson,
+};
 use std::collections::HashMap;
-use std::fmt;
 use std::fs;
-use std::io;
 use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
@@ -18,122 +17,10 @@ pub struct File {
 // Ideally, File is a stateless struct
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum FileError {
-    Io,
-    BaseDirExists,
-    BaseDirNotExists,
-    UsernamesJsonNotExists,
-    UsernameExists,
-    UsernameNotExists,
-    UsernameDirNotExists,
-    DbsJsonNotExists,
-    DbExists,
-    DbNotExists,
-    DbDirNotExists,
-    TablesJsonNotExists,
-    TableExists,
-    TableNotExists,
-    TableBinNotExists,
-    TableTsvNotExists,
-    JsonParse,
-    RangeContainsDeletedRecord,
-    RangeExceedLatestRecord,
-    RangeAndNumRowsMismatch,
-    AttrNotExists,
-    BytesError,
-}
-
-// structure of `usernames.json`
-
-#[derive(Debug, Serialize, Deserialize)]
-struct UsernamesJson {
-    usernames: Vec<UsernameInfo>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct UsernameInfo {
-    name: String,
-    path: String,
-}
-
-// structure of `dbs.json`
-
-#[derive(Debug, Serialize, Deserialize)]
-struct DbsJson {
-    dbs: Vec<DbInfo>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct DbInfo {
-    name: String,
-    path: String,
-}
-
-// structure of `tables.json`
-
-#[derive(Debug, Serialize, Deserialize)]
-struct TablesJson {
-    tables: Vec<TableMeta>,
-}
-
-impl From<io::Error> for FileError {
-    fn from(_err: io::Error) -> FileError {
-        FileError::Io
-    }
-}
-
-impl From<serde_json::Error> for FileError {
-    fn from(_err: serde_json::Error) -> FileError {
-        FileError::JsonParse
-    }
-}
-
-impl From<bytescoder::BytesCoderError> for FileError {
-    fn from(_err: bytescoder::BytesCoderError) -> FileError {
-        FileError::BytesError
-    }
-}
-
-impl fmt::Display for FileError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            FileError::Io => write!(f, "No such file or directory."),
-            FileError::BaseDirExists => write!(f, "Base dir already exists and cannot be created again."),
-            FileError::BaseDirNotExists => write!(f, "Base data directory not exists. All data lost."),
-            FileError::UsernamesJsonNotExists => write!(f, "The file `usernames.json` is lost"),
-            FileError::UsernameExists => write!(f, "User name already exists and cannot be created again."),
-            FileError::UsernameNotExists => {
-                write!(f, "Specified user name not exists. Please create this username first.")
-            }
-            FileError::UsernameDirNotExists => write!(f, "Username exists but corresponding data folder is lost."),
-            FileError::DbsJsonNotExists => write!(f, "The `dbs.json` of the username is lost"),
-            FileError::DbExists => write!(f, "DB already exists and cannot be created again."),
-            FileError::DbNotExists => write!(f, "DB not exists. Please create DB first."),
-            FileError::DbDirNotExists => write!(f, "DB exists but correspoding data folder is lost."),
-            FileError::TablesJsonNotExists => write!(f, "The `tables.json` of the DB is lost."),
-            FileError::TableExists => write!(f, "Table already exists and cannot be created again."),
-            FileError::TableNotExists => write!(f, "Table not exists. Please create table first."),
-            FileError::TableBinNotExists => write!(f, "Table exists but correspoding bin file is lost."),
-            FileError::TableTsvNotExists => write!(f, "Table exists but correspoding tsv file is lost."),
-            FileError::JsonParse => write!(f, "JSON parsing error."),
-            FileError::RangeContainsDeletedRecord => write!(f, "The range of rows to fetch contains deleted records."),
-            FileError::RangeExceedLatestRecord => {
-                write!(f, "The range of rows to fetch exceeds the latest record on the table.")
-            }
-            FileError::RangeAndNumRowsMismatch => {
-                write!(f, "The range of rows does not match number of rows to be modified.")
-            }
-            FileError::AttrNotExists => write!(f, "The row does not contain specified attribute."),
-            FileError::BytesError => write!(f, "Error raised from BytesCoder."),
-        }
-    }
-}
-
 // TODO: add table-level folders to storage hierarchy
 #[allow(dead_code)]
 impl File {
-    pub fn create_file_base(file_base_path: Option<&str>) -> Result<(), FileError> {
+    pub fn create_file_base(file_base_path: Option<&str>) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
@@ -141,7 +28,7 @@ impl File {
         if !Path::new(base_path).exists() {
             fs::create_dir_all(base_path)?;
         } else {
-            return Err(FileError::BaseDirExists);
+            return Err(DiskError::BaseDirExists);
         }
 
         // create and save an initialized `usernames.json`
@@ -157,12 +44,12 @@ impl File {
         Ok(())
     }
 
-    pub fn create_username(username: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
+    pub fn create_username(username: &str, file_base_path: Option<&str>) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward base level
-        File::storage_hierarchy_check(base_path, None, None, None).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, None, None, None).map_err(|e| e)?;
 
         // load current usernames from `usernames.json`
         let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
@@ -172,7 +59,7 @@ impl File {
         // check if the username exists
         for username_info in &usernames_json.usernames {
             if username_info.name == username {
-                return Err(FileError::UsernameExists);
+                return Err(DiskError::UsernameExists);
             }
         }
 
@@ -211,12 +98,12 @@ impl File {
         Ok(())
     }
 
-    pub fn get_usernames(file_base_path: Option<&str>) -> Result<Vec<String>, FileError> {
+    pub fn get_usernames(file_base_path: Option<&str>) -> Result<Vec<String>, DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward base level
-        File::storage_hierarchy_check(base_path, None, None, None).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, None, None, None).map_err(|e| e)?;
 
         // read and parse `usernames.json`
         let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
@@ -232,12 +119,12 @@ impl File {
         Ok(usernames)
     }
 
-    pub fn remove_username(username: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
+    pub fn remove_username(username: &str, file_base_path: Option<&str>) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward base level
-        File::storage_hierarchy_check(base_path, None, None, None).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, None, None, None).map_err(|e| e)?;
 
         // read and parse `usernames.json`
         let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
@@ -251,7 +138,7 @@ impl File {
             .position(|username_info| &username_info.name == username);
         match idx_to_remove {
             Some(idx) => usernames_json.usernames.remove(idx),
-            None => return Err(FileError::UsernameNotExists),
+            None => return Err(DiskError::UsernameNotExists),
         };
 
         // remove corresponding username directory
@@ -271,12 +158,12 @@ impl File {
         Ok(())
     }
 
-    pub fn create_db(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
+    pub fn create_db(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward username level
-        File::storage_hierarchy_check(base_path, Some(username), None, None).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), None, None).map_err(|e| e)?;
 
         // load current dbs from `dbs.json`
         let dbs_json_path = format!("{}/{}/{}", base_path, username, "dbs.json");
@@ -286,7 +173,7 @@ impl File {
         // check if the db exists
         for db_info in &dbs_json.dbs {
             if db_info.name == db_name {
-                return Err(FileError::DbExists);
+                return Err(DiskError::DbExists);
             }
         }
 
@@ -321,12 +208,12 @@ impl File {
         Ok(())
     }
 
-    pub fn get_dbs(username: &str, file_base_path: Option<&str>) -> Result<Vec<String>, FileError> {
+    pub fn get_dbs(username: &str, file_base_path: Option<&str>) -> Result<Vec<String>, DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward username level
-        File::storage_hierarchy_check(base_path, Some(username), None, None).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), None, None).map_err(|e| e)?;
 
         // read and parse `dbs.json`
         let dbs_json_path = format!("{}/{}/{}", base_path, username, "dbs.json");
@@ -342,12 +229,12 @@ impl File {
         Ok(dbs)
     }
 
-    pub fn remove_db(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<(), FileError> {
+    pub fn remove_db(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward username level
-        File::storage_hierarchy_check(base_path, Some(username), None, None).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), None, None).map_err(|e| e)?;
 
         // load current dbs from `dbs.json`
         let dbs_json_path = format!("{}/{}/{}", base_path, username, "dbs.json");
@@ -358,7 +245,7 @@ impl File {
         let idx_to_remove = dbs_json.dbs.iter().position(|db_info| &db_info.name == db_name);
         match idx_to_remove {
             Some(idx) => dbs_json.dbs.remove(idx),
-            None => return Err(FileError::DbNotExists),
+            None => return Err(DiskError::DbNotExists),
         };
 
         // remove corresponding db directory
@@ -383,12 +270,12 @@ impl File {
         db_name: &str,
         table: &Table,
         file_base_path: Option<&str>,
-    ) -> Result<(), FileError> {
+    ) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward db level
-        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -398,7 +285,7 @@ impl File {
         // check if the table exists
         for table_meta in &tables_json.tables {
             if table_meta.name == table.name {
-                return Err(FileError::TableExists);
+                return Err(DiskError::TableExists);
             }
         }
 
@@ -489,12 +376,12 @@ impl File {
 
     /// get the list of tables in a database
     /// for `show tables`
-    pub fn get_tables(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<Vec<String>, FileError> {
+    pub fn get_tables(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<Vec<String>, DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward db level
-        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -515,12 +402,12 @@ impl File {
         username: &str,
         db_name: &str,
         file_base_path: Option<&str>,
-    ) -> Result<Vec<TableMeta>, FileError> {
+    ) -> Result<Vec<TableMeta>, DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward db level
-        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -537,12 +424,12 @@ impl File {
         db_name: &str,
         table_name: &str,
         file_base_path: Option<&str>,
-    ) -> Result<TableMeta, FileError> {
+    ) -> Result<TableMeta, DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward db level
-        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), None).map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -555,7 +442,7 @@ impl File {
                 return Ok(table);
             }
         }
-        Err(FileError::TableNotExists)
+        Err(DiskError::TableNotExists)
     }
 
     pub fn drop_table(
@@ -563,12 +450,13 @@ impl File {
         db_name: &str,
         table_name: &str,
         file_base_path: Option<&str>,
-    ) -> Result<(), FileError> {
+    ) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward table level
-        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name))
+            .map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -582,7 +470,7 @@ impl File {
             .position(|table_meta| &table_meta.name == table_name);
         match idx_to_remove {
             Some(idx) => tables_json.tables.remove(idx),
-            None => return Err(FileError::TableNotExists),
+            None => return Err(DiskError::TableNotExists),
         };
 
         // remove corresponding bin file
@@ -617,12 +505,13 @@ impl File {
         table_name: &str,
         rows: &Vec<Row>,
         file_base_path: Option<&str>,
-    ) -> Result<(), FileError> {
+    ) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward table level
-        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name))
+            .map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -637,7 +526,7 @@ impl File {
 
         let table_meta_target: &TableMeta = match idx_target {
             Some(idx) => &tables_json.tables[idx],
-            None => return Err(FileError::TableNotExists),
+            None => return Err(DiskError::TableNotExists),
         };
 
         // create chunk of bytes to be inserted
@@ -659,7 +548,7 @@ impl File {
                 // set `__valid__` to 1
                 let mut raw_row = vec!["1".to_string()];
                 for attr in table_meta_target.attrs_order[1..].iter() {
-                    raw_row.push(row.data.get(attr).ok_or_else(|| FileError::AttrNotExists)?.clone());
+                    raw_row.push(row.data.get(attr).ok_or_else(|| DiskError::AttrNotExists)?.clone());
                 }
                 chunk += &("\n".to_string() + &raw_row.join("\t"));
             }
@@ -679,12 +568,13 @@ impl File {
         table_name: &str,
         row_range: &Vec<u32>,
         file_base_path: Option<&str>,
-    ) -> Result<Vec<Row>, FileError> {
+    ) -> Result<Vec<Row>, DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward table level
-        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name))
+            .map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -699,7 +589,7 @@ impl File {
 
         let table_meta_target: &TableMeta = match idx_target {
             Some(idx) => &tables_json.tables[idx],
-            None => return Err(FileError::TableNotExists),
+            None => return Err(DiskError::TableNotExists),
         };
 
         // load corresponding chunk of bytes from table bin
@@ -713,14 +603,14 @@ impl File {
         raw.read_to_end(&mut chunk_bytes)?;
 
         if chunk_bytes.len() != ((row_range[1] - row_range[0]) * table_meta_target.row_length) as usize {
-            return Err(FileError::RangeExceedLatestRecord);
+            return Err(DiskError::RangeExceedLatestRecord);
         }
 
         // parse chunk of bytes to vector of rows
         let mut rows: Vec<Row> = vec![];
         for row_bytes in chunk_bytes.chunks(table_meta_target.row_length as usize) {
             if row_bytes[0] == 0 as u8 {
-                return Err(FileError::RangeContainsDeletedRecord);
+                return Err(DiskError::RangeContainsDeletedRecord);
             }
             rows.push(BytesCoder::bytes_to_row(&table_meta_target, &row_bytes.to_vec())?);
         }
@@ -735,7 +625,7 @@ impl File {
         // for line in buffered.lines().skip((row_range[0] + 1) as usize) {
         //     let raw_line: Vec<String> = line?.replace('\n', "").split('\t').map(|e| e.to_string()).collect();
         //     if raw_line[0] == "0".to_string() {
-        //         return Err(FileError::RangeContainsDeletedRecord);
+        //         return Err(DiskError::RangeContainsDeletedRecord);
         //     }
         //     let mut new_row = Row::new();
         //     for i in 1..raw_line.len() {
@@ -750,7 +640,7 @@ impl File {
         //     }
         // }
         // if rows.len() < ((row_range[1] - row_range[0]) as usize) {
-        //     return Err(FileError::RangeExceedLatestRecord);
+        //     return Err(DiskError::RangeExceedLatestRecord);
         // }
 
         Ok(rows)
@@ -762,12 +652,13 @@ impl File {
         table_name: &str,
         row_range: &Vec<u32>,
         file_base_path: Option<&str>,
-    ) -> Result<(), FileError> {
+    ) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward table level
-        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name))
+            .map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -782,7 +673,7 @@ impl File {
 
         let table_meta_target: &TableMeta = match idx_target {
             Some(idx) => &tables_json.tables[idx],
-            None => return Err(FileError::TableNotExists),
+            None => return Err(DiskError::TableNotExists),
         };
 
         // open table bin for read
@@ -796,10 +687,10 @@ impl File {
             let mut valid_byte = [0; 1];
             match buffered.read_exact(&mut valid_byte) {
                 Ok(_) => (),
-                Err(_) => return Err(FileError::RangeExceedLatestRecord),
+                Err(_) => return Err(DiskError::RangeExceedLatestRecord),
             };
             if valid_byte[0] == 0 as u8 {
-                return Err(FileError::RangeContainsDeletedRecord);
+                return Err(DiskError::RangeContainsDeletedRecord);
             }
         }
 
@@ -832,14 +723,14 @@ impl File {
                 } else {
                     let l = line?;
                     if (&l).starts_with("0") {
-                        return Err(FileError::RangeContainsDeletedRecord);
+                        return Err(DiskError::RangeContainsDeletedRecord);
                     }
                     new_content.push(format!("0{}", &l[1..]));
                     rows_deleted += 1;
                 }
             }
             if rows_deleted < row_range[1] - row_range[0] {
-                return Err(FileError::RangeExceedLatestRecord);
+                return Err(DiskError::RangeExceedLatestRecord);
             }
 
             // overwrite table tsv file
@@ -863,16 +754,17 @@ impl File {
         row_range: &Vec<u32>,
         new_rows: &Vec<Row>,
         file_base_path: Option<&str>,
-    ) -> Result<(), FileError> {
+    ) -> Result<(), DiskError> {
         if row_range[1] - row_range[0] != new_rows.len() as u32 {
-            return Err(FileError::RangeAndNumRowsMismatch);
+            return Err(DiskError::RangeAndNumRowsMismatch);
         }
 
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
         // perform storage check toward table level
-        File::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name))
+            .map_err(|e| e)?;
 
         // load current tables from `tables.json`
         let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
@@ -887,7 +779,7 @@ impl File {
 
         let table_meta_target: &TableMeta = match idx_target {
             Some(idx) => &tables_json.tables[idx],
-            None => return Err(FileError::TableNotExists),
+            None => return Err(DiskError::TableNotExists),
         };
 
         // open table bin for read
@@ -901,10 +793,10 @@ impl File {
             let mut valid_byte = [0; 1];
             match buffered.read_exact(&mut valid_byte) {
                 Ok(_) => (),
-                Err(_) => return Err(FileError::RangeExceedLatestRecord),
+                Err(_) => return Err(DiskError::RangeExceedLatestRecord),
             };
             if valid_byte[0] == 0 as u8 {
-                return Err(FileError::RangeContainsDeletedRecord);
+                return Err(DiskError::RangeContainsDeletedRecord);
             }
         }
 
@@ -931,7 +823,7 @@ impl File {
                 // set `__valid__` to 1
                 let mut raw_row = vec!["1".to_string()];
                 for attr in table_meta_target.attrs_order[1..].iter() {
-                    raw_row.push(row.data.get(attr).ok_or_else(|| FileError::AttrNotExists)?.clone());
+                    raw_row.push(row.data.get(attr).ok_or_else(|| DiskError::AttrNotExists)?.clone());
                 }
                 modified_content.push(raw_row.join("\t"));
             }
@@ -950,14 +842,14 @@ impl File {
                 } else {
                     let l = line?;
                     if (&l).starts_with("0") {
-                        return Err(FileError::RangeContainsDeletedRecord);
+                        return Err(DiskError::RangeContainsDeletedRecord);
                     }
                     new_content.push(modified_content[idx - (row_range[0] + 1) as usize].clone());
                     rows_modified += 1;
                 }
             }
             if rows_modified < row_range[1] - row_range[0] {
-                return Err(FileError::RangeExceedLatestRecord);
+                return Err(DiskError::RangeExceedLatestRecord);
             }
 
             // overwrite table tsv file
@@ -969,118 +861,6 @@ impl File {
                 .truncate(true)
                 .open(table_tsv_path)?;
             table_tsv_file.write_all(new_content.join("\n").as_bytes())?;
-        }
-
-        Ok(())
-    }
-
-    fn storage_hierarchy_check(
-        base_path: &str,
-        username: Option<&str>,
-        db_name: Option<&str>,
-        table_name: Option<&str>,
-    ) -> Result<(), FileError> {
-        // check if base directory exists
-        if !Path::new(base_path).exists() {
-            return Err(FileError::BaseDirNotExists);
-        }
-
-        // check if `usernames.json` exists
-        let usernames_json_path = format!("{}/{}", base_path, "usernames.json");
-        if !Path::new(&usernames_json_path).exists() {
-            return Err(FileError::UsernamesJsonNotExists);
-        }
-
-        // base level check passed
-        if username == None {
-            return Ok(());
-        }
-
-        // check if username exists
-        let usernames_file = fs::File::open(&usernames_json_path)?;
-        let usernames_json: UsernamesJson = serde_json::from_reader(usernames_file)?;
-        if !usernames_json
-            .usernames
-            .iter()
-            .map(|username_info| username_info.name.clone())
-            .collect::<Vec<String>>()
-            .contains(&username.unwrap().to_string())
-        {
-            return Err(FileError::UsernameNotExists);
-        }
-
-        // check if username directory exists
-        let username_path = format!("{}/{}", base_path, username.unwrap());
-        if !Path::new(&username_path).exists() {
-            return Err(FileError::UsernameDirNotExists);
-        }
-
-        // check if `dbs.json` exists
-        let dbs_json_path = format!("{}/{}", username_path, "dbs.json");
-        if !Path::new(&dbs_json_path).exists() {
-            return Err(FileError::DbsJsonNotExists);
-        }
-
-        // username level check passed
-        if db_name == None {
-            return Ok(());
-        }
-
-        // check if db exists
-        let dbs_file = fs::File::open(&dbs_json_path)?;
-        let dbs_json: DbsJson = serde_json::from_reader(dbs_file)?;
-        if !dbs_json
-            .dbs
-            .iter()
-            .map(|db_info| db_info.name.clone())
-            .collect::<Vec<String>>()
-            .contains(&db_name.unwrap().to_string())
-        {
-            return Err(FileError::DbNotExists);
-        }
-
-        // check if db directory exists
-        let db_path = format!("{}/{}", username_path, db_name.unwrap());
-        if !Path::new(&db_path).exists() {
-            return Err(FileError::DbDirNotExists);
-        }
-
-        // check if `tables.json` exists
-        let tables_json_path = format!("{}/{}", db_path, "tables.json");
-        if !Path::new(&tables_json_path).exists() {
-            return Err(FileError::TablesJsonNotExists);
-        }
-
-        // db level check passed
-        if table_name == None {
-            return Ok(());
-        }
-
-        // check if table exists
-        let tables_file = fs::File::open(&tables_json_path)?;
-        let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
-        if !tables_json
-            .tables
-            .iter()
-            .map(|table_meta| table_meta.name.clone())
-            .collect::<Vec<String>>()
-            .contains(&table_name.unwrap().to_string())
-        {
-            return Err(FileError::TableNotExists);
-        }
-
-        // check if table bin exists
-        let table_bin_path = format!("{}/{}.bin", db_path, table_name.unwrap());
-        if !Path::new(&table_bin_path).exists() {
-            return Err(FileError::TableBinNotExists);
-        }
-
-        if dotenv!("ENABLE_TSV") == "true" {
-            // check if table tsv exists
-            let table_tsv_path = format!("{}/{}.tsv", db_path, table_name.unwrap());
-            if !Path::new(&table_tsv_path).exists() {
-                return Err(FileError::TableTsvNotExists);
-            }
         }
 
         Ok(())
@@ -1118,7 +898,7 @@ mod tests {
 
         assert_eq!(
             File::create_file_base(Some(file_base_path)).unwrap_err(),
-            FileError::BaseDirExists
+            DiskError::BaseDirExists
         );
     }
 
@@ -1168,7 +948,7 @@ mod tests {
 
         assert_eq!(
             File::create_username("happyguy", Some(file_base_path)).unwrap_err(),
-            FileError::UsernameExists
+            DiskError::UsernameExists
         );
     }
 
@@ -1209,7 +989,7 @@ mod tests {
 
         assert_eq!(
             File::remove_username("happyguy", Some(file_base_path)).unwrap_err(),
-            FileError::UsernameNotExists
+            DiskError::UsernameNotExists
         );
 
         File::remove_username("sadguy", Some(file_base_path)).unwrap();
@@ -1284,11 +1064,11 @@ mod tests {
 
         assert_eq!(
             File::create_db("happyguy", "BookerDB", Some(file_base_path)).unwrap_err(),
-            FileError::UsernameNotExists
+            DiskError::UsernameNotExists
         );
         assert_eq!(
             File::create_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap_err(),
-            FileError::DbExists
+            DiskError::DbExists
         );
     }
 
@@ -1317,7 +1097,7 @@ mod tests {
 
         assert_eq!(
             File::get_dbs("sadguy", Some(file_base_path)).unwrap_err(),
-            FileError::UsernameNotExists
+            DiskError::UsernameNotExists
         );
     }
 
@@ -1344,7 +1124,7 @@ mod tests {
 
         assert_eq!(
             File::remove_db("happyguy", "BookerDB", Some(file_base_path)).unwrap_err(),
-            FileError::UsernameNotExists
+            DiskError::UsernameNotExists
         );
 
         File::remove_db("crazyguy", "PhotoDB", Some(file_base_path)).unwrap();
@@ -1354,7 +1134,7 @@ mod tests {
 
         assert_eq!(
             File::remove_db("crazyguy", "PhotoDB", Some(file_base_path)).unwrap_err(),
-            FileError::DbNotExists
+            DiskError::DbNotExists
         );
 
         File::remove_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
@@ -1564,15 +1344,15 @@ mod tests {
 
         assert_eq!(
             File::create_table("happyguy", "BookerDB", &htl_table, Some(file_base_path)).unwrap_err(),
-            FileError::UsernameNotExists
+            DiskError::UsernameNotExists
         );
         assert_eq!(
             File::create_table("crazyguy", "MusicDB", &htl_table, Some(file_base_path)).unwrap_err(),
-            FileError::DbNotExists
+            DiskError::DbNotExists
         );
         assert_eq!(
             File::create_table("crazyguy", "BookerDB", &htl_table, Some(file_base_path)).unwrap_err(),
-            FileError::TableExists
+            DiskError::TableExists
         );
 
         File::drop_table("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap();
@@ -1597,7 +1377,7 @@ mod tests {
 
         assert_eq!(
             File::drop_table("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap_err(),
-            FileError::TableNotExists
+            DiskError::TableNotExists
         );
 
         File::drop_table("crazyguy", "BookerDB", "Hotels", Some(file_base_path)).unwrap();
@@ -1778,19 +1558,19 @@ mod tests {
 
         assert_eq!(
             File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 4], Some(file_base_path)).unwrap_err(),
-            FileError::RangeExceedLatestRecord
+            DiskError::RangeExceedLatestRecord
         );
 
         File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![1, 2], Some(file_base_path)).unwrap();
 
         assert_eq!(
             File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![1, 2], Some(file_base_path)).unwrap_err(),
-            FileError::RangeContainsDeletedRecord,
+            DiskError::RangeContainsDeletedRecord,
         );
 
         assert_eq!(
             File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 2], Some(file_base_path)).unwrap_err(),
-            FileError::RangeContainsDeletedRecord,
+            DiskError::RangeContainsDeletedRecord,
         );
 
         File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 1], Some(file_base_path)).unwrap();
@@ -1859,14 +1639,14 @@ mod tests {
 
         assert_eq!(
             File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 7], Some(file_base_path)).unwrap_err(),
-            FileError::RangeExceedLatestRecord
+            DiskError::RangeExceedLatestRecord
         );
 
         File::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 6], Some(file_base_path)).unwrap();
 
         assert_eq!(
             File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![5, 6], Some(file_base_path)).unwrap_err(),
-            FileError::RangeContainsDeletedRecord,
+            DiskError::RangeContainsDeletedRecord,
         );
 
         let rows: Vec<Row> =
@@ -1914,7 +1694,7 @@ mod tests {
                 Some(file_base_path)
             )
             .unwrap_err(),
-            FileError::RangeContainsDeletedRecord
+            DiskError::RangeContainsDeletedRecord
         );
 
         let data = vec![
@@ -1952,7 +1732,7 @@ mod tests {
                 Some(file_base_path)
             )
             .unwrap_err(),
-            FileError::RangeAndNumRowsMismatch
+            DiskError::RangeAndNumRowsMismatch
         );
 
         assert_eq!(
@@ -1965,7 +1745,7 @@ mod tests {
                 Some(file_base_path)
             )
             .unwrap_err(),
-            FileError::RangeExceedLatestRecord
+            DiskError::RangeExceedLatestRecord
         );
 
         let rows: Vec<Row> =

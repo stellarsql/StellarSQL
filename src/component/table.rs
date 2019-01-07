@@ -1,8 +1,8 @@
 use crate::component::datatype::DataType;
 use crate::component::field::Field;
+use crate::storage::diskinterface::DiskError;
 use crate::storage::diskinterface::TableMeta;
 use crate::storage::file::File;
-use crate::storage::file::FileError;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
@@ -72,7 +72,7 @@ pub enum TableError {
     InsertFieldNotNullMismatched(String),
     InsertFieldDefaultMismatched(String),
     SelectFieldNotExisted(String),
-    CausedByFile(FileError),
+    CausedByFile(DiskError),
     KeyNotExist,
 }
 
