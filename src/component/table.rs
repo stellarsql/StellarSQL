@@ -4,6 +4,7 @@ use crate::storage::file::File;
 use crate::storage::file::FileError;
 use crate::storage::file::TableMeta;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt;
 
 #[derive(Debug, Clone)]
@@ -27,7 +28,7 @@ pub struct Table {
 
     /* virtual table */
     is_predicate_init: bool, // if ever filter rows for predicate
-    row_list: Vec<usize>,    // record rows for predicate
+    row_set: HashSet<usize>, // record rows for predicate
 }
 
 #[derive(Debug, Clone)]
@@ -108,7 +109,7 @@ impl Table {
             is_delete: false,
 
             is_predicate_init: false,
-            row_list: vec![],
+            row_set: HashSet::new(),
         }
     }
 
@@ -190,21 +191,33 @@ impl Table {
         Ok(())
     }
 
-    /// filter rows by the predicate and update the row_list
+    /// filter rows by the predicate and update the row_set
     ///
     /// Note: this assume all data of rows and the predicate follow the rules, so there is no check for
     /// data type and field name.
-    pub fn operator_filter_rows(&mut self, field_name: &str, operator: &str, value: &str) -> Result<(), TableError> {
+    pub fn operator_filter_rows(
+        &mut self,
+        field_name: &str,
+        operator: &str,
+        value: &str,
+    ) -> Result<HashSet<usize>, TableError> {
         let data_type = self.fields.get(field_name).unwrap().datatype.clone();
-        let mut list = vec![];
+        let mut set = HashSet::new();
 
         // if the first time, the predicate range is the range of all rows.
         if !self.is_predicate_init {
-            self.row_list = (0..self.rows.len()).collect();
-            self.is_predicate_init = true;
+            for i in 0..self.rows.len() {
+                self.row_set.insert(i);
+            }
+            // TODO: analyse when to set true.
+            // currently always false, so it will get all rows every times.HashSet
+            // We need to figure out when to let it to be true, as when there is `OR` then
+            // it should keep false.
+
+            // self.is_predicate_init = true;
         }
 
-        for i in &self.row_list {
+        for i in self.row_set.iter() {
             let row = &self.rows[*i];
             if match data_type {
                 DataType::Int => {
@@ -231,22 +244,35 @@ impl Table {
                     cmp(data, operator, value.to_string())
                 }
             } {
-                list.push(*i);
+                set.insert(*i);
             }
         }
 
-        self.row_list = list;
-        Ok(())
+        self.row_set = set;
+        Ok(self.row_set.clone())
     }
 
-    /// select fields from rows in row_list of the table
-    pub fn select(&self, field_names: Vec<String>) -> Result<SelectData, TableError> {
+    /// set the new row set
+    pub fn set_row_set(&mut self, set: HashSet<usize>) {
+        self.row_set = set;
+        self.is_predicate_init = true;
+    }
+
+    /// select fields from rows in row_set of the table
+    pub fn select(&mut self, field_names: Vec<String>) -> Result<SelectData, TableError> {
         let mut data = SelectData::new();
         for name in &field_names {
             data.fields.push(name.to_string());
         }
-        // only which is in row_list will be picked
-        for i in &self.row_list {
+        // if no predicate, select all data
+        if !self.is_predicate_init {
+            for i in 0..self.rows.len() {
+                self.row_set.insert(i);
+            }
+            self.is_predicate_init = true;
+        }
+        // only which is in row_set will be picked
+        for i in &self.row_set {
             let row = &self.rows[*i];
             let mut r = vec![];
             for name in &field_names {
@@ -259,6 +285,7 @@ impl Table {
             }
             data.rows.push(r);
         }
+        data.rows.sort();
         Ok(data)
     }
 }
@@ -367,11 +394,13 @@ mod tests {
         let data = vec![("a1", "4"), ("a2", "bbb")];
         let _ = table.insert_row(data).unwrap();
 
-        table.operator_filter_rows("a1", ">", "2").unwrap();
+        let set = table.operator_filter_rows("a1", ">", "2").unwrap();
+        table.set_row_set(set);
         let select_data = table.select(vec!["a1".to_string(), "a2".to_string()]).unwrap();
-        assert_eq!(select_data.rows, vec![vec!["3", "aaa"],vec!["4", "bbb"]]);
+        assert_eq!(select_data.rows, vec![["3", "aaa"], ["4", "bbb"]]);
 
-        table.operator_filter_rows("a2", "=", "bbb").unwrap();
+        let set = table.operator_filter_rows("a2", "=", "bbb").unwrap();
+        table.set_row_set(set);
         let select_data = table.select(vec!["a1".to_string(), "a2".to_string()]).unwrap();
         assert_eq!(select_data.rows, vec![vec!["4", "bbb"]]);
     }

@@ -1,10 +1,12 @@
+use std::collections::HashSet;
+
 /// Data for `select`
 #[derive(Debug)]
 pub struct QueryData {
     pub fields: Vec<String>,
     pub tables: Vec<String>,
     pub joins: Vec<Join>,
-    pub predicate: Option<Box<Node>>,
+    pub predicate: NodePtr,
     pub group_fields: Vec<String>,
     pub aggregation_fn: Vec<String>,
     pub sort_fields: Vec<String>,
@@ -49,7 +51,7 @@ pub enum TopType {
 pub struct Join {
     pub join_type: JoinType,
     pub table: String,
-    pub condition: Option<Box<Node>>,
+    pub condition: NodePtr,
 }
 
 impl Join {
@@ -83,11 +85,14 @@ impl JoinType {
     }
 }
 
-#[derive(Default, Debug)]
+pub type NodePtr = Option<Box<Node>>;
+
+#[derive(Default, Debug, Clone)]
 pub struct Node {
     pub root: String,
-    pub left: Option<Box<Node>>,
-    pub right: Option<Box<Node>>,
+    pub set: HashSet<usize>,
+    pub left: NodePtr,
+    pub right: NodePtr,
 }
 
 impl Node {

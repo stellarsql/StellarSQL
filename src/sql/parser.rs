@@ -89,6 +89,7 @@ impl Parser {
                 Token::Select => {
                     debug!("-> select table");
                     sql.querydata = parse_select(&mut iter)?;
+                    sql.select().map_err(|e| ParserError::SQLError(e))?;
                     Ok(())
                 }
                 _ => {
@@ -379,6 +380,7 @@ fn parse_select(iter: &mut Peekable<Iter<Symbol>>) -> Result<QueryData, ParserEr
         // TODO:
     }
 
+    assert_token(iter.next(), Token::Semicolon)?;
     Ok(query_data)
 }
 
@@ -430,18 +432,6 @@ fn parse_postfix_tree(symbols: Vec<&Symbol>) -> Result<Box<Node>, ParserError> {
     }
 
     Ok(Box::new(tree))
-}
-
-/// in order traversal
-#[allow(dead_code)]
-fn in_order(node: Box<Node>, vec: &mut Vec<String>) {
-    if node.left.is_some() {
-        in_order(node.left.unwrap(), vec);
-    }
-    vec.push(node.root.clone());
-    if node.right.is_some() {
-        in_order(node.right.unwrap(), vec);
-    }
 }
 
 /// parse predicate tokens from infix to postfix
@@ -588,6 +578,17 @@ mod tests {
         sql
     }
 
+    /// in order traversal
+    fn in_order(node: Box<Node>, vec: &mut Vec<String>) {
+        if node.left.is_some() {
+            in_order(node.left.unwrap(), vec);
+        }
+        vec.push(node.root.clone());
+        if node.right.is_some() {
+            in_order(node.right.unwrap(), vec);
+        }
+    }
+
     #[test]
     fn test_parser_create_database() {
         let mut sql = fake_sql();
@@ -630,7 +631,6 @@ mod tests {
 
     #[test]
     fn test_insert_into_table1() {
-        env_logger::init();
         let query = "insert into t1(a1, a2, a3) values (1, 2, 3), (4, 5, 6);";
         let parser = Parser::new(query).unwrap();
         let mut iter = parser.tokens.iter().peekable();
@@ -815,60 +815,59 @@ mod tests {
     }
 
     #[test]
-    fn test_parser_select_field_table() {
-        let query = "select t1.a1, t1.a2, t1.a3 from t1, t2 where t1.a1 > 4 and t1.a1 = t2.a1;";
-        let mut sql = fake_sql();
+    fn test_parse_select_field_table() {
+        let query = "select t1.a1, t1.a2, t1.a3 from t1, t2;";
         let parser = Parser::new(query).unwrap();
-        parser.parse(&mut sql).unwrap();
+        let mut iter = parser.tokens.iter().peekable();
 
+        let querydata = parse_select(&mut iter).unwrap();
         assert_eq!(
-            sql.querydata.fields,
+            querydata.fields,
             vec![String::from("t1.a1"), String::from("t1.a2"), String::from("t1.a3")]
         );
-        assert_eq!(sql.querydata.tables, vec![String::from("t1"), String::from("t2")]);
+        assert_eq!(querydata.tables, vec![String::from("t1"), String::from("t2")]);
     }
 
     #[test]
-    fn test_parser_select_distinct_top() {
-        let mut sql = fake_sql();
-
+    fn test_parse_select_distinct_top() {
         let query = "select distinct top 5 t1.a1, t1.a2, t1.a3 from t1;";
         let parser = Parser::new(query).unwrap();
-        parser.parse(&mut sql).unwrap();
+        let mut iter = parser.tokens.iter().peekable();
 
+        let querydata = parse_select(&mut iter).unwrap();
         assert_eq!(
-            sql.querydata.fields,
+            querydata.fields,
             vec![String::from("t1.a1"), String::from("t1.a2"), String::from("t1.a3")]
         );
-        assert_eq!(sql.querydata.tables, vec![String::from("t1")]);
-        assert_eq!(sql.querydata.top, TopType::Number(5));
-        assert_eq!(sql.querydata.is_distinct, true);
+        assert_eq!(querydata.tables, vec![String::from("t1")]);
+        assert_eq!(querydata.top, TopType::Number(5));
+        assert_eq!(querydata.is_distinct, true);
 
         let query = "select top 50 percent a1, b1, c1 from t1;";
         let parser = Parser::new(query).unwrap();
-        parser.parse(&mut sql).unwrap();
+        let mut iter = parser.tokens.iter().peekable();
 
-        assert_eq!(sql.querydata.top, TopType::Percent(50.0));
-        assert_eq!(sql.querydata.is_distinct, false);
+        let querydata = parse_select(&mut iter).unwrap();
+        assert_eq!(querydata.top, TopType::Percent(50.0));
+        assert_eq!(querydata.is_distinct, false);
     }
 
     #[test]
-    fn test_parser_select_join() {
-        let mut sql = fake_sql();
-
+    fn test_parse_select_join() {
         let query = "select t1.a1, t1.a2, t1.a3 from t1 inner join t2 on t1.a1 = t2.a1 left join t3 on t1.a1 = t3.a1;";
         let parser = Parser::new(query).unwrap();
-        parser.parse(&mut sql).unwrap();
+        let mut iter = parser.tokens.iter().peekable();
 
+        let querydata = parse_select(&mut iter).unwrap();
         assert_eq!(
-            sql.querydata.fields,
+            querydata.fields,
             vec![String::from("t1.a1"), String::from("t1.a2"), String::from("t1.a3")]
         );
-        assert_eq!(sql.querydata.tables, vec![String::from("t1")]);
-        assert_eq!(sql.querydata.joins[0].join_type, JoinType::InnerJoin);
-        assert_eq!(sql.querydata.joins[0].table, "t2".to_string());
-        assert_eq!(sql.querydata.joins[1].join_type, JoinType::LeftJoin);
-        assert_eq!(sql.querydata.joins[1].table, "t3".to_string());
+        assert_eq!(querydata.tables, vec![String::from("t1")]);
+        assert_eq!(querydata.joins[0].join_type, JoinType::InnerJoin);
+        assert_eq!(querydata.joins[0].table, "t2".to_string());
+        assert_eq!(querydata.joins[1].join_type, JoinType::LeftJoin);
+        assert_eq!(querydata.joins[1].table, "t3".to_string());
     }
 
 }
