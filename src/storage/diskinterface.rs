@@ -173,6 +173,10 @@ impl fmt::Display for DiskError {
 
 #[allow(dead_code)]
 impl DiskInterface {
+    pub fn create_file_base(file_base_path: Option<&str>) -> Result<(), DiskError> {
+        Ok(File::create_file_base(file_base_path)?)
+    }
+
     pub fn create_username(username: &str, file_base_path: Option<&str>) -> Result<(), DiskError> {
         Ok(File::create_username(username, file_base_path)?)
     }

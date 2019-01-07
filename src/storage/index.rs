@@ -1,6 +1,7 @@
-use crate::storage::diskinterface::{DiskError, TableMeta};
+use crate::storage::diskinterface::{DiskError, DiskInterface, TableMeta};
 
-use std::fmt;
+use std::fs;
+use std::io::{BufReader, Read};
 
 pub struct Index {
     table_meta: TableMeta,
@@ -48,17 +49,15 @@ pub struct Index {
 // }
 
 /// (row, key_value) pair
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RowPair {
     row: u32,
     key_value: Vec<u8>,
 }
 
 impl RowPair {
-    fn new(pair: (u32, &Vec<u8>)) -> RowPair {
-        RowPair {
-            row: pair.0,
-            key_value: pair.1.to_vec(),
-        }
+    pub fn new(row: u32, key_value: Vec<u8>) -> Self {
+        RowPair { row, key_value }
     }
 }
 
@@ -86,63 +85,50 @@ impl Index {
     }
 
     // build index from table bin file
-    // fn build_from_file(&mut self, file_base_path: Option<&str>) -> Result<(), IndexError> {
-    //     // determine file base path
-    //     let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+    fn build_from_bin(&mut self, file_base_path: Option<&str>) -> Result<(), DiskError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
-    //     // perform storage check toward table level
-    //     DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name)).map_err(|e| e)?;
+        // perform storage check toward table level
+        DiskInterface::storage_hierarchy_check(
+            base_path,
+            Some(&self.table_meta.username),
+            Some(&self.table_meta.db_name),
+            Some(&self.table_meta.name),
+        )
+        .map_err(|e| e)?;
 
-    //     // load current tables from `tables.json`
-    //     let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
-    //     let tables_file = fs::File::open(&tables_json_path)?;
-    //     let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+        // load table bin as chunk of bytes
+        let table_bin_path = format!(
+            "{}/{}/{}/{}.bin",
+            base_path, self.table_meta.username, self.table_meta.db_name, self.table_meta.name
+        );
+        let table_bin_file = fs::File::open(&table_bin_path)?;
+        let mut buffered = BufReader::new(table_bin_file);
 
-    //     // locate meta of target table
-    //     let idx_target = tables_json
-    //         .tables
-    //         .iter()
-    //         .position(|table_meta| &table_meta.name == table_name);
+        let mut chunk_bytes = vec![];
+        buffered.read_to_end(&mut chunk_bytes)?;
 
-    //     let table_meta_target: &TableMeta = match idx_target {
-    //         Some(idx) => &tables_json.tables[idx],
-    //         None => return Err(FileError::TableNotExists),
-    //     };
+        // parse chunk of bytes to vector of rows
+        let mut new_index_data: Vec<RowPair> = vec![];
+        for (row_id, row_bytes) in chunk_bytes.chunks(self.table_meta.row_length as usize).enumerate() {
+            // ignore deleted rows
+            if row_bytes[0] == 1 as u8 {
+                new_index_data.push(RowPair::new(
+                    row_id as u32,
+                    row_bytes[self.table_meta.attr_offset_ranges[1][0] as usize
+                        ..self.table_meta.attr_offset_ranges[1][1] as usize]
+                        .to_vec(),
+                ));
+            }
+        }
 
-    //     // load corresponding chunk of bytes from table bin
-    //     let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
-    //     let table_bin_file = fs::File::open(&table_bin_path)?;
-    //     let mut buffered = BufReader::new(table_bin_file);
+        new_index_data.sort_by(|rp1, rp2| rp1.key_value.cmp(&rp2.key_value));
 
-    //     let mut chunk_bytes = vec![];
-    //     buffered.seek(SeekFrom::Start((row_range[0] * table_meta_target.row_length) as u64))?;
-    //     let mut raw = buffered.take(((row_range[1] - row_range[0]) * table_meta_target.row_length) as u64);
-    //     raw.read_to_end(&mut chunk_bytes)?;
+        self.index_data = new_index_data;
 
-    //     if chunk_bytes.len() != ((row_range[1] - row_range[0]) * table_meta_target.row_length) as usize {
-    //         return Err(FileError::RangeExceedLatestRecord);
-    //     }
-
-    //     // parse chunk of bytes to vector of rows
-    //     let mut rows: Vec<Row> = vec![];
-    //     for row_bytes in chunk_bytes.chunks(table_meta_target.row_length as usize) {
-    //         if row_bytes[0] == 0 as u8 {
-    //             return Err(FileError::RangeContainsDeletedRecord);
-    //         }
-    //         rows.push(BytesCoder::bytes_to_row(&table_meta_target, &row_bytes.to_vec())?);
-    //     }
-
-    //     Ok(rows)
-    // }
-
-    // /// create a new index data for Index
-    // fn build_index(&mut self) -> Result<(), IndexError> {
-    //     self.index_data = match self.table_meta.key_type {
-    //         KeyType::Int => IndexData::IndexInt(self.build_int_index_table()?),
-    //         KeyType::String => IndexData::IndexString(self.build_string_index_table()?),
-    //     };
-    //     Ok(())
-    // }
+        Ok(())
+    }
 
     // /// Write index to storage
     // pub fn write_index_table(&mut self) -> Result<(), IndexError> {
@@ -187,47 +173,10 @@ impl Index {
     //     }
     // }
 
-    // /// build index table with raw table in which key type is int
-    // fn build_int_index_table(&self) -> Result<(Vec<RowPairInt>), IndexError> {
-    //     let mut index_arr = vec![];
-    //     let mut row = 0;
-    //     let table_meta = &self.table_meta;
-    //     let bytes_to_slide = table_meta.row_bytes - table_meta.key_bytes;
-    //     let table_name = table_meta.table_name.clone();
-    //     let mut file = File::open(table_name).map_err(|_| IndexError::OpenFileError)?;
-    //     file.seek(SeekFrom::Start(table_meta.key_offset as u64))
-    //         .map_err(|_| IndexError::BuildIntIndexTableError)?;
-    //     let mut buffer = [0; 4];
-    //     loop {
-    //         let _bytes_read = match file.read(&mut buffer) {
-    //             Ok(0) => break, // end-of-file
-    //             Ok(_) => {
-    //                 unsafe {
-    //                     let temp = mem::transmute::<[u8; 4], u32>(buffer);
-    //                     let index_content = RowPairInt {
-    //                         row: row,
-    //                         key_value: temp,
-    //                     };
-    //                     index_arr.push(index_content);
-    //                 }
-    //                 file.seek(SeekFrom::Current(bytes_to_slide as i64))
-    //                     .map_err(|_| IndexError::BuildIntIndexTableError)?;
-    //                 row = row + 1;
-    //             }
-    //             Err(_) => {
-    //                 return Err(IndexError::BuildIntIndexTableError);
-    //             }
-    //         };
-    //     }
-
-    //     index_arr.sort_unstable_by(|a, b| a.key_value.cmp(&b.key_value));
-    //     Ok(index_arr)
-    // }
-
     // /// write index table into index file
     // fn write_int_index_table(&self, index_arr: &Vec<RowPairInt>) -> Result<(), IndexError> {
     //     let table_index_name = format!("{}.index", self.table_meta.table_name);
-    //     let mut file_write = File::create(table_index_name).map_err(|_| IndexError::CreateFileError)?;
+    //     let mut file_write = create(table_index_name).map_err(|_| IndexError::CreateFileError)?;
     //     for i in 0..index_arr.len() {
     //         let row_temp = unsafe { mem::transmute::<u32, [u8; 4]>(index_arr[i].row) };
     //         file_write.write(&row_temp).map_err(|_| IndexError::WriteIndexError)?;
@@ -241,7 +190,7 @@ impl Index {
     // fn read_int_index_table(&mut self) -> Result<(), IndexError> {
     //     let mut index_arr = vec![];
     //     let table_index_name = format!("{}.index", self.table_meta.table_name);
-    //     let mut file = File::open(table_index_name).map_err(|_| IndexError::OpenFileError)?;
+    //     let mut file = open(table_index_name).map_err(|_| IndexError::OpenFileError)?;
     //     let mut buffer_row = [0; 4];
     //     let mut buffer_key = [0; 4];
     //     loop {
@@ -288,42 +237,9 @@ impl Index {
     //     Ok(())
     // }
 
-    // fn build_string_index_table(&self) -> Result<(Vec<RowPairString>), IndexError> {
-    //     let mut index_arr = vec![];
-    //     let mut row = 0;
-    //     let table_meta = &self.table_meta;
-    //     let bytes_to_slide = table_meta.row_bytes - table_meta.key_bytes;
-    //     let table_name = table_meta.table_name.clone();
-    //     let mut file = File::open(table_name).map_err(|_| IndexError::OpenFileError)?;
-    //     file.seek(SeekFrom::Start(table_meta.key_offset as u64))
-    //         .map_err(|_| IndexError::BuildStringIndexTableError)?;
-    //     let mut buffer = vec![0; table_meta.key_bytes as usize];
-    //     loop {
-    //         let _bytes_read = match file.read(&mut buffer) {
-    //             Ok(0) => break, // end-of-file
-    //             Ok(_) => {
-    //                 let index_content = RowPairString {
-    //                     row: row,
-    //                     key_value: buffer.clone(),
-    //                 };
-    //                 index_arr.push(index_content);
-    //                 file.seek(SeekFrom::Current(bytes_to_slide as i64))
-    //                     .map_err(|_| IndexError::BuildStringIndexTableError)?;
-    //                 row = row + 1;
-    //             }
-    //             Err(_) => {
-    //                 return Err(IndexError::BuildStringIndexTableError);
-    //             }
-    //         };
-    //     }
-
-    //     index_arr.sort_unstable_by(|a, b| a.key_value.cmp(&b.key_value));
-    //     Ok(index_arr)
-    // }
-
     // fn write_string_index_table(&self, index_arr: &Vec<RowPairString>) -> Result<(), IndexError> {
     //     let table_index_name = format!("{}.index", self.table_meta.table_name);
-    //     let mut file_write = File::create(table_index_name).map_err(|_| IndexError::CreateFileError)?;
+    //     let mut file_write = create(table_index_name).map_err(|_| IndexError::CreateFileError)?;
     //     for i in 0..index_arr.len() {
     //         let row_temp = unsafe { mem::transmute::<u32, [u8; 4]>(index_arr[i].row) };
     //         file_write.write(&row_temp).map_err(|_| IndexError::WriteIndexError)?;
@@ -337,7 +253,7 @@ impl Index {
     // fn read_string_index_table(&mut self) -> Result<(), IndexError> {
     //     let mut index_arr = vec![];
     //     let table_index_name = format!("{}.index", self.table_meta.table_name);
-    //     let mut file = File::open(table_index_name).map_err(|_| IndexError::OpenFileError)?;
+    //     let mut file = open(table_index_name).map_err(|_| IndexError::OpenFileError)?;
     //     let mut buffer_row = [0; 4];
     //     let mut buffer_key = vec![0; self.table_meta.key_bytes as usize];
     //     loop {
@@ -386,19 +302,159 @@ impl Index {
     // }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     #[test]
-//     pub fn test_construct_index() {
-//         let table_meta = TableMeta {
-//             table_name: String::from("test_data/1.in"),
-//             key_type: KeyType::Int,
-//             key_offset: 0,
-//             key_bytes: 4,
-//             row_bytes: 4,
-//         };
-//         let mut index = Index::new(table_meta).unwrap();
-//         index.write_index_table().unwrap();
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::component::datatype::DataType;
+    use crate::component::field;
+    use crate::component::field::Field;
+    use crate::component::table::Table;
+    use std::fs;
+    use std::path::Path;
+
+    #[test]
+    pub fn test_build_from_bin() {
+        let file_base_path = "data9";
+        if Path::new(file_base_path).exists() {
+            fs::remove_dir_all(file_base_path).unwrap();
+        }
+
+        DiskInterface::create_file_base(Some(file_base_path)).unwrap();
+        DiskInterface::create_username("crazyguy", Some(file_base_path)).unwrap();
+        DiskInterface::create_db("crazyguy", "BookerDB", Some(file_base_path)).unwrap();
+
+        let mut aff_table = Table::new("Affiliates");
+        aff_table.fields.insert(
+            "AffID".to_string(),
+            Field::new_all("AffID", DataType::Int, true, None, field::Checker::None, false),
+        );
+        aff_table.fields.insert(
+            "AffName".to_string(),
+            Field::new_all(
+                "AffName",
+                DataType::Varchar(40),
+                true,
+                None,
+                field::Checker::None,
+                false,
+            ),
+        );
+        aff_table.fields.insert(
+            "AffEmail".to_string(),
+            Field::new_all(
+                "AffEmail",
+                DataType::Varchar(50),
+                true,
+                None,
+                field::Checker::None,
+                false,
+            ),
+        );
+        aff_table.fields.insert(
+            "AffPhoneNum".to_string(),
+            Field::new_all(
+                "AffPhoneNum",
+                DataType::Varchar(20),
+                false,
+                Some("+886900000000".to_string()),
+                field::Checker::None,
+                false,
+            ),
+        );
+        aff_table.primary_key.push("AffID".to_string());
+
+        DiskInterface::create_table("crazyguy", "BookerDB", &aff_table, Some(file_base_path)).unwrap();
+
+        let data = vec![
+            ("AffID", "2"),
+            ("AffName", "Tom"),
+            ("AffEmail", "tom@foo.com"),
+            ("AffPhoneNum", "+886900000001"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        let data = vec![
+            ("AffID", "7"),
+            ("AffName", "Ben"),
+            ("AffEmail", "ben@foo.com"),
+            ("AffPhoneNum", "+886900000002"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        // d
+        let data = vec![
+            ("AffID", "6"),
+            ("AffName", "Leo"),
+            ("AffEmail", "leo@dee.com"),
+            ("AffPhoneNum", "+886900000003"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        let data = vec![
+            ("AffID", "1"),
+            ("AffName", "John"),
+            ("AffEmail", "john@dee.com"),
+            ("AffPhoneNum", "+886900000004"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        // d
+        let data = vec![
+            ("AffID", "4"),
+            ("AffName", "Ray"),
+            ("AffEmail", "ray@dee.com"),
+            ("AffPhoneNum", "+886900000005"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        // d
+        let data = vec![
+            ("AffID", "5"),
+            ("AffName", "Bryn"),
+            ("AffEmail", "bryn@dee.com"),
+            ("AffPhoneNum", "+886900000006"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        let data = vec![
+            ("AffID", "8"),
+            ("AffName", "Eric"),
+            ("AffEmail", "eric@doo.com"),
+            ("AffPhoneNum", "+886900000007"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        let data = vec![
+            ("AffID", "3"),
+            ("AffName", "Vinc"),
+            ("AffEmail", "vinc@doo.com"),
+            ("AffPhoneNum", "+886900000008"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        DiskInterface::append_rows(
+            "crazyguy",
+            "BookerDB",
+            "Affiliates",
+            &aff_table.rows[..].iter().cloned().collect(),
+            Some(file_base_path),
+        )
+        .unwrap();
+
+        DiskInterface::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 3], Some(file_base_path)).unwrap();
+        DiskInterface::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![4, 6], Some(file_base_path)).unwrap();
+
+        let table_meta =
+            DiskInterface::load_table_meta("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap();
+        let mut index = Index::new(table_meta).unwrap();
+        index.build_from_bin(Some(file_base_path)).unwrap();
+
+        assert_eq!(index.index_data.len(), 5);
+
+        for i in 1..index.index_data.len() {
+            assert!(index.index_data[i - 1].key_value < index.index_data[i].key_value);
+        }
+
+        // index.write_index_table().unwrap();
+    }
+}
