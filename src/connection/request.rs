@@ -103,7 +103,10 @@ impl Request {
         }
         // check dbname
         if dbname != "" {
-            let parser = Parser::new(&cmd).unwrap();
+            let parser = match Parser::new(&cmd) {
+                Ok(_parser) => _parser,
+                Err(ret) => return Err(RequestError::CauseByParser(ret)),
+            };
             match parser.parse(&mut sql) {
                 Err(ret) => return Err(RequestError::CauseByParser(ret)),
                 Ok(_) => {}
@@ -114,11 +117,21 @@ impl Request {
             if iter.next() != Some("create") || iter.next() != Some("database") {
                 return Err(RequestError::CreateDBBeforeCmd);
             }
-            let parser = Parser::new(&cmd).unwrap();
+            let parser = match Parser::new(&cmd) {
+                Ok(_parser) => _parser,
+                Err(ret) => return Err(RequestError::CauseByParser(ret)),
+            };
             match parser.parse(&mut sql) {
                 Err(ret) => return Err(RequestError::CauseByParser(ret)),
                 Ok(_) => {}
             }
+        }
+        if !sql.result_json.is_empty() {
+            let return_json = sql.result_json.clone();
+            sql.result_json.clear();
+            return Ok(Response::OK {
+                msg: return_json.to_string(),
+            });
         }
         Ok(Response::OK {
             msg: "Query OK!".to_string(),

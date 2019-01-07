@@ -1,3 +1,4 @@
+use crate::component::table::Row;
 use crate::sql::worker::{SQLError, SQL};
 use crate::storage::file::{File, FileError};
 use std::fmt;
@@ -144,8 +145,26 @@ impl Pool {
                     Err(e) => return Err(PoolError::FileError(e)),
                 }
             }
-            if table.is_data_loaded {
-                // TODO: 3. check dirty bit of rows
+            // 3. check dirty bit of rows
+            let mut new_row: Vec<Row> = table.rows.clone();
+            let l = new_row.len();
+            for i in 0..l {
+                if !new_row[i].is_dirty {
+                    // remove rows which are not dirty
+                    new_row.remove(i);
+                }
+            }
+            if !new_row.is_empty() {
+                match File::append_rows(
+                    &sql.user.name,
+                    &sql.database.name,
+                    &name,
+                    &new_row,
+                    Some(dotenv!("FILE_BASE_PATH")),
+                ) {
+                    Ok(_) => {}
+                    Err(e) => return Err(PoolError::FileError(e)),
+                }
             }
         }
         Ok(())
