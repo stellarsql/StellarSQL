@@ -14,6 +14,8 @@ pub struct DiskInterface {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TableMeta {
     pub name: String,
+    pub username: String,
+    pub db_name: String,
     pub path_tsv: String,
     pub path_bin: String,
     pub primary_key: Vec<String>,

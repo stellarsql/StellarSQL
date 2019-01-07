@@ -405,6 +405,8 @@ impl File {
         // create new table json instance
         let mut new_table_meta = TableMeta {
             name: table.name.to_string(),
+            username: username.to_string(),
+            db_name: db_name.to_string(),
             path_tsv: format!("{}.tsv", table.name),
             path_bin: format!("{}.bin", table.name),
             primary_key: table.primary_key.clone(),
@@ -1463,12 +1465,14 @@ mod tests {
         let ideal_tables = vec![
             TableMeta {
                 name: "Affiliates".to_string(),
+                username: "crazyguy".to_string(),
+                db_name: "BookerDB".to_string(),
+                path_tsv: "Affiliates.tsv".to_string(),
+                path_bin: "Affiliates.bin".to_string(),
                 primary_key: vec!["AffID".to_string()],
                 foreign_key: vec![],
                 reference_table: None,
                 reference_attr: None,
-                path_tsv: "Affiliates.tsv".to_string(),
-                path_bin: "Affiliates.bin".to_string(),
                 attr_offset_ranges: vec![vec![0, 1], vec![1, 5], vec![5, 55], vec![55, 95], vec![95, 115]],
                 row_length: 115,
                 // ignore attrs checking
@@ -1477,12 +1481,14 @@ mod tests {
             },
             TableMeta {
                 name: "Hotels".to_string(),
+                username: "crazyguy".to_string(),
+                db_name: "BookerDB".to_string(),
+                path_tsv: "Hotels.tsv".to_string(),
+                path_bin: "Hotels.bin".to_string(),
                 primary_key: vec!["HotelID".to_string()],
                 foreign_key: vec![],
                 reference_table: None,
                 reference_attr: None,
-                path_tsv: "Hotels.tsv".to_string(),
-                path_bin: "Hotels.bin".to_string(),
                 attr_offset_ranges: vec![vec![0, 1], vec![1, 5], vec![5, 55], vec![55, 95], vec![95, 115]],
                 row_length: 115,
                 // ignore attrs checking
@@ -1507,13 +1513,15 @@ mod tests {
 
         for i in 0..tables.len() {
             assert_eq!(tables[i].name, ideal_tables[i].name);
+            assert_eq!(tables[i].username, ideal_tables[i].username);
+            assert_eq!(tables[i].db_name, ideal_tables[i].db_name);
+            assert_eq!(tables[i].path_tsv, ideal_tables[i].path_tsv);
+            assert_eq!(tables[i].path_bin, ideal_tables[i].path_bin);
             assert_eq!(tables[i].primary_key, ideal_tables[i].primary_key);
             assert_eq!(tables[i].foreign_key, ideal_tables[i].foreign_key);
             assert_eq!(tables[i].reference_table, ideal_tables[i].reference_table);
             assert_eq!(tables[i].reference_attr, ideal_tables[i].reference_attr);
             assert_eq!(tables[i].row_length, ideal_tables[i].row_length);
-            assert_eq!(tables[i].path_tsv, ideal_tables[i].path_tsv);
-            assert_eq!(tables[i].path_bin, ideal_tables[i].path_bin);
             assert_eq!(tables[i].attr_offset_ranges, ideal_tables[i].attr_offset_ranges);
         }
 

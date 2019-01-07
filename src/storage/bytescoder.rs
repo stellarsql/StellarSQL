@@ -218,12 +218,14 @@ mod tests {
     pub fn test_row_encode_decode() {
         let mut aff_table_meta = TableMeta {
             name: "Affiliates".to_string(),
+            username: "crazyguy".to_string(),
+            db_name: "BookerDB".to_string(),
+            path_tsv: "Affiliates.tsv".to_string(),
+            path_bin: "Affiliates.bin".to_string(),
             primary_key: vec!["AffID".to_string()],
             foreign_key: vec![],
             reference_table: None,
             reference_attr: None,
-            path_tsv: "Affiliates.tsv".to_string(),
-            path_bin: "Affiliates.bin".to_string(),
             attr_offset_ranges: vec![vec![0, 1], vec![1, 5], vec![5, 55], vec![55, 95], vec![95, 115]],
             row_length: 115,
             // ignore attrs checking
