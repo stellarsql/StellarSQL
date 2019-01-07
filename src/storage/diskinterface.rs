@@ -1,3 +1,4 @@
+use crate::component::datatype::DataType;
 use crate::component::field::Field;
 use crate::component::table::Row;
 use crate::component::table::Table;
@@ -83,6 +84,7 @@ pub enum DiskError {
     TableNotExists,
     TableBinNotExists,
     TableTsvNotExists,
+    TableIdxFileNotExists,
     JsonParse,
     RangeContainsDeletedRecord,
     RangeExceedLatestRecord,
@@ -130,6 +132,10 @@ impl fmt::Display for DiskError {
             DiskError::TableNotExists => write!(f, "Table not exists. Please create table first."),
             DiskError::TableBinNotExists => write!(f, "Table exists but correspoding bin file is lost."),
             DiskError::TableTsvNotExists => write!(f, "Table exists but correspoding tsv file is lost."),
+            DiskError::TableIdxFileNotExists => write!(
+                f,
+                "Index file does not exist. Please build and save it before you can load from it."
+            ),
             DiskError::JsonParse => write!(f, "JSON parsing error."),
             DiskError::RangeContainsDeletedRecord => write!(f, "The range of rows to fetch contains deleted records."),
             DiskError::RangeExceedLatestRecord => {
@@ -143,33 +149,6 @@ impl fmt::Display for DiskError {
         }
     }
 }
-
-// #[derive(Debug)]
-// pub enum IndexError {
-//     OpenFileError,
-//     CreateFileError,
-//     BuildIntIndexTableError,
-//     ReadIntIndexTableError,
-//     BuildStringIndexTableError,
-//     ReadStringIndexTableError,
-//     WriteIndexError,
-//     InsertValueMismatchIndex,
-// }
-
-// impl fmt::Display for IndexError {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         match *self {
-//             IndexError::OpenFileError => write!(f, "cannot open file"),
-//             IndexError::CreateFileError => write!(f, "cannot create file"),
-//             IndexError::BuildIntIndexTableError => write!(f, "Build int index table error"),
-//             IndexError::ReadIntIndexTableError => write!(f, "Read int index table error"),
-//             IndexError::BuildStringIndexTableError => write!(f, "Build string index table error"),
-//             IndexError::ReadStringIndexTableError => write!(f, "Read string index table error"),
-//             IndexError::WriteIndexError => write!(f, "Write index table error"),
-//             IndexError::InsertValueMismatchIndex => write!(f, "Type of the insert value mismatches index"),
-//         }
-//     }
-// }
 
 #[allow(dead_code)]
 impl DiskInterface {
@@ -410,6 +389,16 @@ impl DiskInterface {
         }
 
         Ok(())
+    }
+
+    pub fn get_datatype_size(datatype: &DataType) -> u32 {
+        match datatype {
+            DataType::Char(length) => length.clone() as u32,
+            DataType::Double => 8,
+            DataType::Float => 4,
+            DataType::Int => 4,
+            DataType::Varchar(length) => length.clone() as u32,
+        }
     }
 }
 

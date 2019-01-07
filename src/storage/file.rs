@@ -1,4 +1,3 @@
-use crate::component::datatype::DataType;
 use crate::component::field::Field;
 use crate::component::table::Row;
 use crate::component::table::Table;
@@ -325,7 +324,7 @@ impl File {
         new_table_meta.attr_offset_ranges = vec![vec![0, 1]];
         let attr_sizes: Vec<u32> = new_table_meta.attrs_order[1..]
             .iter()
-            .map(|attr_name| File::get_datatype_size(&new_table_meta.attrs[attr_name].datatype))
+            .map(|attr_name| DiskInterface::get_datatype_size(&new_table_meta.attrs[attr_name].datatype))
             .collect();
 
         // `__valid__` attr occupies 1 byte
@@ -864,16 +863,6 @@ impl File {
         }
 
         Ok(())
-    }
-
-    fn get_datatype_size(datatype: &DataType) -> u32 {
-        match datatype {
-            DataType::Char(length) => length.clone() as u32,
-            DataType::Double => 8,
-            DataType::Float => 4,
-            DataType::Int => 4,
-            DataType::Varchar(length) => length.clone() as u32,
-        }
     }
 }
 

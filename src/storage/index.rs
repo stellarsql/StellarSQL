@@ -1,7 +1,11 @@
+extern crate byteorder;
+
 use crate::storage::diskinterface::{DiskError, DiskInterface, TableMeta};
 
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::fs;
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Write};
+use std::path::Path;
 
 pub struct Index {
     table_meta: TableMeta,
@@ -49,7 +53,7 @@ pub struct Index {
 // }
 
 /// (row, key_value) pair
-#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RowPair {
     row: u32,
     key_value: Vec<u8>,
@@ -58,6 +62,14 @@ pub struct RowPair {
 impl RowPair {
     pub fn new(row: u32, key_value: Vec<u8>) -> Self {
         RowPair { row, key_value }
+    }
+
+    pub fn to_bytes(&self) -> Result<Vec<u8>, DiskError> {
+        let mut bs: Vec<u8> = vec![];
+        bs.write_u32::<BigEndian>(self.row)?;
+        bs.extend_from_slice(&self.key_value);
+
+        Ok(bs)
     }
 }
 
@@ -130,22 +142,91 @@ impl Index {
         Ok(())
     }
 
-    // /// Write index to storage
-    // pub fn write_index_table(&mut self) -> Result<(), IndexError> {
-    //     match &self.index_data {
-    //         IndexData::IndexInt(index_int) => self.write_int_index_table(&index_int),
-    //         IndexData::IndexString(index_string) => self.write_string_index_table(&index_string),
-    //         IndexData::None => Ok(()), // should not happen
-    //     }
-    // }
+    // save(overwrite) index table into index file
+    fn save(&self, file_base_path: Option<&str>) -> Result<(), DiskError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
-    // /// Read index from storage
-    // pub fn read_index_table(&mut self) -> Result<(), IndexError> {
-    //     match self.table_meta.key_type {
-    //         KeyType::Int => self.read_int_index_table(),
-    //         KeyType::String => self.read_string_index_table(),
-    //     }
-    // }
+        // perform storage check toward table level
+        DiskInterface::storage_hierarchy_check(
+            base_path,
+            Some(&self.table_meta.username),
+            Some(&self.table_meta.db_name),
+            Some(&self.table_meta.name),
+        )
+        .map_err(|e| e)?;
+
+        // create chunk of bytes to be written
+        let mut chunk_bytes = vec![];
+        for rp in self.index_data.iter() {
+            chunk_bytes.extend_from_slice(&rp.to_bytes()?);
+        }
+
+        // write chunk of bytes to index bin
+        let index_bin_path = format!(
+            "{}/{}/{}/{}_{}.idx",
+            base_path,
+            self.table_meta.username,
+            self.table_meta.db_name,
+            self.table_meta.name,
+            self.table_meta.primary_key[0]
+        );
+        let mut index_bin_file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(index_bin_path)?;
+        index_bin_file.write_all(&chunk_bytes)?;
+
+        Ok(())
+    }
+
+    // Load index from storage
+    pub fn load(&mut self, file_base_path: Option<&str>) -> Result<(), DiskError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+        // perform storage check toward table level
+        DiskInterface::storage_hierarchy_check(
+            base_path,
+            Some(&self.table_meta.username),
+            Some(&self.table_meta.db_name),
+            Some(&self.table_meta.name),
+        )
+        .map_err(|e| e)?;
+
+        let index_bin_path = format!(
+            "{}/{}/{}/{}_{}.idx",
+            base_path,
+            self.table_meta.username,
+            self.table_meta.db_name,
+            self.table_meta.name,
+            self.table_meta.primary_key[0]
+        );
+        if !Path::new(&index_bin_path).exists() {
+            return Err(DiskError::TableIdxFileNotExists);
+        }
+        let index_bin_file = fs::File::open(&index_bin_path)?;
+        let mut buffered = BufReader::new(index_bin_file);
+
+        let mut chunk_bytes = vec![];
+        buffered.read_to_end(&mut chunk_bytes)?;
+
+        // parse chunk of bytes to vector of rows
+        let mut index_data: Vec<RowPair> = vec![];
+        for rp_bytes in chunk_bytes
+            .chunks((self.table_meta.attr_offset_ranges[1][1] - self.table_meta.attr_offset_ranges[1][0] + 4) as usize)
+        {
+            index_data.push(RowPair::new(
+                (&rp_bytes[..4]).read_u32::<BigEndian>()?,
+                rp_bytes[4..].to_vec(),
+            ));
+        }
+
+        self.index_data = index_data;
+
+        Ok(())
+    }
 
     // /// insert a row-key pair into the index
     // pub fn insert_index_table(&mut self, value_pair: (u32, &str)) -> Result<(), IndexError> {
@@ -173,49 +254,6 @@ impl Index {
     //     }
     // }
 
-    // /// write index table into index file
-    // fn write_int_index_table(&self, index_arr: &Vec<RowPairInt>) -> Result<(), IndexError> {
-    //     let table_index_name = format!("{}.index", self.table_meta.table_name);
-    //     let mut file_write = create(table_index_name).map_err(|_| IndexError::CreateFileError)?;
-    //     for i in 0..index_arr.len() {
-    //         let row_temp = unsafe { mem::transmute::<u32, [u8; 4]>(index_arr[i].row) };
-    //         file_write.write(&row_temp).map_err(|_| IndexError::WriteIndexError)?;
-    //         let key_temp = unsafe { mem::transmute::<u32, [u8; 4]>(index_arr[i].key_value) };
-    //         file_write.write(&key_temp).map_err(|_| IndexError::WriteIndexError)?;
-    //     }
-    //     Ok(())
-    // }
-
-    // /// read index table from index file
-    // fn read_int_index_table(&mut self) -> Result<(), IndexError> {
-    //     let mut index_arr = vec![];
-    //     let table_index_name = format!("{}.index", self.table_meta.table_name);
-    //     let mut file = open(table_index_name).map_err(|_| IndexError::OpenFileError)?;
-    //     let mut buffer_row = [0; 4];
-    //     let mut buffer_key = [0; 4];
-    //     loop {
-    //         let _bytes_read = match file.read(&mut buffer_row) {
-    //             Ok(0) => break, // end-of-file
-    //             Ok(_) => unsafe {
-    //                 let temp_row = mem::transmute::<[u8; 4], u32>(buffer_row);
-    //                 file.read(&mut buffer_key)
-    //                     .map_err(|_| IndexError::ReadIntIndexTableError)?;
-    //                 let temp_key = mem::transmute::<[u8; 4], u32>(buffer_key);
-    //                 let index_content = RowPairInt {
-    //                     row: temp_row,
-    //                     key_value: temp_key,
-    //                 };
-    //                 index_arr.push(index_content);
-    //             },
-    //             Err(_) => {
-    //                 return Err(IndexError::ReadIntIndexTableError);
-    //             }
-    //         };
-    //     }
-    //     self.index_data = IndexData::IndexInt(index_arr);
-    //     Ok(())
-    // }
-
     // /// insert into index table in which primary key type is int
     // fn insert_int_index_table(insert_value: RowPairInt, index_arr: &mut Vec<RowPairInt>) -> Result<(), IndexError> {
     //     if index_arr.is_empty() {
@@ -234,47 +272,6 @@ impl Index {
     //             index_arr.insert(target - 1, insert_value);
     //         }
     //     }
-    //     Ok(())
-    // }
-
-    // fn write_string_index_table(&self, index_arr: &Vec<RowPairString>) -> Result<(), IndexError> {
-    //     let table_index_name = format!("{}.index", self.table_meta.table_name);
-    //     let mut file_write = create(table_index_name).map_err(|_| IndexError::CreateFileError)?;
-    //     for i in 0..index_arr.len() {
-    //         let row_temp = unsafe { mem::transmute::<u32, [u8; 4]>(index_arr[i].row) };
-    //         file_write.write(&row_temp).map_err(|_| IndexError::WriteIndexError)?;
-    //         file_write
-    //             .write(&index_arr[i].key_value)
-    //             .map_err(|_| IndexError::WriteIndexError)?;
-    //     }
-    //     Ok(())
-    // }
-
-    // fn read_string_index_table(&mut self) -> Result<(), IndexError> {
-    //     let mut index_arr = vec![];
-    //     let table_index_name = format!("{}.index", self.table_meta.table_name);
-    //     let mut file = open(table_index_name).map_err(|_| IndexError::OpenFileError)?;
-    //     let mut buffer_row = [0; 4];
-    //     let mut buffer_key = vec![0; self.table_meta.key_bytes as usize];
-    //     loop {
-    //         let _bytes_read = match file.read(&mut buffer_row) {
-    //             Ok(0) => break, // end-of-file
-    //             Ok(_) => unsafe {
-    //                 let temp_row = mem::transmute::<[u8; 4], u32>(buffer_row);
-    //                 file.read(&mut buffer_key)
-    //                     .map_err(|_| IndexError::ReadStringIndexTableError)?;
-    //                 let index_content = RowPairString {
-    //                     row: temp_row,
-    //                     key_value: buffer_key.clone(),
-    //                 };
-    //                 index_arr.push(index_content);
-    //             },
-    //             Err(_) => {
-    //                 return Err(IndexError::ReadStringIndexTableError);
-    //             }
-    //         };
-    //     }
-    //     self.index_data = IndexData::IndexString(index_arr);
     //     Ok(())
     // }
 
@@ -313,7 +310,7 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    pub fn test_build_from_bin() {
+    pub fn test_build_save_load() {
         let file_base_path = "data9";
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
@@ -455,6 +452,9 @@ mod tests {
             assert!(index.index_data[i - 1].key_value < index.index_data[i].key_value);
         }
 
-        // index.write_index_table().unwrap();
+        let index_data = index.index_data.to_vec();
+        index.save(Some(file_base_path)).unwrap();
+        index.load(Some(file_base_path)).unwrap();
+        assert_eq!(index_data, index.index_data);
     }
 }
