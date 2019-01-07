@@ -1,8 +1,8 @@
 use crate::component::datatype::DataType;
 use crate::component::field::Field;
+use crate::storage::diskinterface::TableMeta;
 use crate::storage::file::File;
 use crate::storage::file::FileError;
-use crate::storage::file::TableMeta;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;

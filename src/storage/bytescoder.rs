@@ -4,7 +4,7 @@ use crate::component::datatype::DataType;
 use crate::component::field;
 use crate::component::field::Field;
 use crate::component::table::Row;
-use crate::storage::file::TableMeta;
+use crate::storage::diskinterface::TableMeta;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::collections::HashMap;
 use std::fmt;

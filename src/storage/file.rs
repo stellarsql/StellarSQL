@@ -4,6 +4,7 @@ use crate::component::table::Row;
 use crate::component::table::Table;
 use crate::storage::bytescoder;
 use crate::storage::bytescoder::BytesCoder;
+use crate::storage::diskinterface::TableMeta;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
@@ -76,21 +77,6 @@ struct TablesJson {
     tables: Vec<TableMeta>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TableMeta {
-    pub name: String,
-    pub path_tsv: String,
-    pub path_bin: String,
-    pub primary_key: Vec<String>,
-    pub foreign_key: Vec<String>,
-    pub reference_table: Option<String>,
-    pub reference_attr: Option<String>,
-    pub row_length: u32,
-    pub attrs: HashMap<String, Field>,
-    pub attrs_order: Vec<String>,
-    pub attr_offset_ranges: Vec<Vec<u32>>,
-}
-
 impl From<io::Error> for FileError {
     fn from(_err: io::Error) -> FileError {
         FileError::Io
@@ -144,6 +130,7 @@ impl fmt::Display for FileError {
     }
 }
 
+// TODO: add table-level folders to storage hierarchy
 #[allow(dead_code)]
 impl File {
     pub fn create_file_base(file_base_path: Option<&str>) -> Result<(), FileError> {
