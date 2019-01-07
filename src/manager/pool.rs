@@ -108,13 +108,13 @@ impl Pool {
     fn hierarchic_check(sql: &SQL) -> Result<(), PoolError> {
         // 1. check dirty bit of database
         if sql.database.is_delete {
-            match File::remove_db(&sql.username, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
+            match File::remove_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(_) => return Ok(()),
                 Err(e) => return Err(PoolError::FileError(e)),
             }
         }
         if sql.database.is_dirty {
-            match File::create_db(&sql.username, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
+            match File::create_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(_) => {}
                 Err(e) => return Err(PoolError::FileError(e)),
             }
@@ -123,7 +123,7 @@ impl Pool {
         for (name, table) in sql.database.tables.iter() {
             if table.is_delete {
                 match File::drop_table(
-                    &sql.username,
+                    &sql.user.name,
                     &sql.database.name,
                     &name,
                     Some(dotenv!("FILE_BASE_PATH")),
@@ -135,7 +135,7 @@ impl Pool {
             }
             if table.is_dirty {
                 match File::create_table(
-                    &sql.username,
+                    &sql.user.name,
                     &sql.database.name,
                     &table,
                     Some(dotenv!("FILE_BASE_PATH")),

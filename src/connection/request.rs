@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 pub struct Request {
     pub username: String,
     pub addr: String,
+    pub key: i32,
 }
 
 #[derive(Debug)]
@@ -20,6 +21,7 @@ pub enum RequestError {
     UserNotExist(String),
     CreateDBBeforeCmd,
     BadRequest,
+    InvalidKey,
 }
 
 impl fmt::Display for RequestError {
@@ -31,6 +33,7 @@ impl fmt::Display for RequestError {
             RequestError::UserNotExist(ref s) => write!(f, "user: {} not found", s),
             RequestError::CreateDBBeforeCmd => write!(f, "please create a database before any other commands"),
             RequestError::BadRequest => write!(f, "BadRequest, invalid request format"),
+            RequestError::InvalidKey => write!(f, "invalid key format"),
         }
     }
 }
@@ -40,6 +43,7 @@ impl Request {
         Request {
             username: "".to_string(),
             addr: new_addr,
+            key: 0,
         }
     }
     pub fn parse(input: &str, mutex: &Arc<Mutex<Pool>>, req: &mut Request) -> Result<Response, RequestError> {
@@ -61,8 +65,13 @@ impl Request {
                 return Err(RequestError::BadRequest);
             }
             let username = split_str[0];
-            let key = split_str[3];
-            // TODO: save key
+
+            // type check, save key
+            let key: i32 = match split_str[3].parse() {
+                Ok(_key) => _key,
+                Err(_) => return Err(RequestError::InvalidKey),
+            };
+            req.key = key;
 
             // initialize username
             match Request::user_verify(username) {
@@ -88,6 +97,10 @@ impl Request {
             Ok(tsql) => tsql,
             Err(ret) => return Err(RequestError::PoolError(ret)),
         };
+        // initialize public key
+        if sql.user.key == 0 {
+            sql.user.key = req.key;
+        }
         // check dbname
         if dbname != "" {
             let parser = Parser::new(&cmd).unwrap();

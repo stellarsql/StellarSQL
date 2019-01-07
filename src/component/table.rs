@@ -29,6 +29,9 @@ pub struct Table {
     /* virtual table */
     is_predicate_init: bool, // if ever filter rows for predicate
     row_set: HashSet<usize>, // record rows for predicate
+
+    /* encryption */
+    pub public_key: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +73,7 @@ pub enum TableError {
     InsertFieldDefaultMismatched(String),
     SelectFieldNotExisted(String),
     CausedByFile(FileError),
+    KeyNotExist,
 }
 
 impl fmt::Display for TableError {
@@ -88,6 +92,7 @@ impl fmt::Display for TableError {
             ),
             TableError::SelectFieldNotExisted(ref name) => write!(f, "Selected field not exists: {}", name),
             TableError::CausedByFile(ref e) => write!(f, "error caused by file: {}", e),
+            TableError::KeyNotExist => write!(f, "encrypt error: public key is not existed"),
         }
     }
 }
@@ -110,6 +115,8 @@ impl Table {
 
             is_predicate_init: false,
             row_set: HashSet::new(),
+
+            public_key: 0,
         }
     }
 
@@ -186,6 +193,16 @@ impl Table {
             };
         }
 
+        for (key, field) in self.fields.iter() {
+            if field.encrypt {
+                if self.public_key == 0 {
+                    // 0 is default key value, which is not a valid key
+                    return Err(TableError::KeyNotExist);
+                }
+                let value = new_row.data.get_mut(key).unwrap();
+                // TODO: encrypt value with self.public_key
+            }
+        }
         self.rows.push(new_row);
 
         Ok(())

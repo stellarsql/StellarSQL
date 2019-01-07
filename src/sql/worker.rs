@@ -8,10 +8,24 @@ use std::fmt;
 
 #[derive(Debug)]
 pub struct SQL {
-    pub username: String,
+    pub user: User,
     pub database: Database,
     pub querydata: QueryData,
     pub result_json: String,
+}
+
+#[derive(Debug)]
+pub struct User {
+    pub name: String,
+    pub key: i32,
+}
+impl User {
+    pub fn new(username: &str) -> User {
+        User {
+            name: username.to_string(),
+            key: 0,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -32,7 +46,7 @@ impl fmt::Display for SQLError {
 impl SQL {
     pub fn new(username: &str) -> Result<SQL, SQLError> {
         Ok(SQL {
-            username: username.to_string(),
+            user: User::new(username),
             database: Database::new(""), // empty db
             querydata: QueryData::new(),
             result_json: "".to_string(),
@@ -47,7 +61,7 @@ impl SQL {
 
     /// Load a database
     pub fn load_database(&mut self, db_name: &str) -> Result<(), SQLError> {
-        self.database = Database::load_db(&self.username, db_name).map_err(|e| SQLError::CauserByDatabase(e))?;
+        self.database = Database::load_db(&self.user.name, db_name).map_err(|e| SQLError::CauserByDatabase(e))?;
         Ok(())
     }
 
@@ -71,6 +85,9 @@ impl SQL {
             .tables
             .get_mut(table_name)
             .ok_or(SQLError::SemanticError("table not exists".to_string()))?;
+        if table.public_key == 0 {
+            table.public_key = self.user.key;
+        }
 
         for row in rows {
             let mut row_in_pair: Vec<(&str, &str)> = Vec::new();
@@ -179,7 +196,7 @@ impl SQL {
             }
             (false, false) => {
                 // No join. The virtual table is the table.
-                vt1.load_all_rows_data(&self.username, &self.database.name)
+                vt1.load_all_rows_data(&self.user.name, &self.database.name)
                     .map_err(|e| SQLError::SemanticError(format!("{}", e)))?;
                 vt3 = vt1;
             }
