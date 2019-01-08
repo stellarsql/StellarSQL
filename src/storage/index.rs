@@ -211,6 +211,22 @@ impl Index {
 
         Ok(())
     }
+
+    // delete a row-key pair from the index
+    pub fn delete(&mut self, row: &Row) -> Result<(), DiskError> {
+        let key_val = BytesCoder::attr_to_bytes(
+            &self.table_meta.attrs[&self.table_meta.primary_key[0]].datatype,
+            row.data
+                .get(&self.table_meta.primary_key[0])
+                .ok_or_else(|| DiskError::AttrNotExists)?,
+        )?;
+        match self.index_data.binary_search_by(|rp| rp.key_value.cmp(&key_val)) {
+            Ok(pos) => self.index_data.remove(pos),
+            Err(_pos) => return Err(DiskError::IndexKeyNotFound),
+        };
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -224,7 +240,7 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    pub fn test_build_save_load_insert() {
+    pub fn test_build_save_load_insert_delete() {
         let file_base_path = "data9";
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
@@ -382,10 +398,34 @@ mod tests {
         aff_table.insert_row(data).unwrap();
 
         index.insert(&aff_table.rows[aff_table.rows.len() - 1]).unwrap();
+
         assert_eq!(index.index_data.len(), 6);
         for i in 1..index.index_data.len() {
             assert!(index.index_data[i - 1].key_value < index.index_data[i].key_value);
         }
         assert_eq!(index.num_rows, 9);
+
+        assert_eq!(
+            index.insert(&aff_table.rows[aff_table.rows.len() - 1]).unwrap_err(),
+            DiskError::DuplicatedKey,
+        );
+
+        index.delete(&aff_table.rows[aff_table.rows.len() - 2]).unwrap();
+
+        assert_eq!(index.index_data.len(), 5);
+        for i in 1..index.index_data.len() {
+            assert!(index.index_data[i - 1].key_value < index.index_data[i].key_value);
+        }
+        assert_eq!(index.num_rows, 9);
+
+        assert_eq!(
+            index.delete(&aff_table.rows[aff_table.rows.len() - 2]).unwrap_err(),
+            DiskError::IndexKeyNotFound,
+        );
+
+        let index_data = index.index_data.to_vec();
+        index.save(Some(file_base_path)).unwrap();
+        index.load(Some(file_base_path)).unwrap();
+        assert_eq!(index_data, index.index_data);
     }
 }

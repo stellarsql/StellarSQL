@@ -92,6 +92,7 @@ pub enum DiskError {
     AttrNotExists,
     BytesError,
     DuplicatedKey,
+    IndexKeyNotFound,
 }
 
 impl From<io::Error> for DiskError {
@@ -148,6 +149,9 @@ impl fmt::Display for DiskError {
             DiskError::AttrNotExists => write!(f, "The row does not contain specified attribute."),
             DiskError::BytesError => write!(f, "Error raised from BytesCoder."),
             DiskError::DuplicatedKey => write!(f, "Attempting to insert an duplicated key to index."),
+            DiskError::IndexKeyNotFound => {
+                write!(f, "Attempting to access or delete a key which does not exist in index.")
+            }
         }
     }
 }
