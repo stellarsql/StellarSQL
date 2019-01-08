@@ -1,7 +1,6 @@
 use crate::manager::pool::{Pool, PoolError};
 use crate::sql::parser::{Parser, ParserError};
-use crate::storage::diskinterface::DiskError;
-use crate::storage::file::File;
+use crate::storage::diskinterface::{DiskError, DiskInterface};
 use crate::Response;
 use std::fmt;
 
@@ -144,12 +143,12 @@ impl Request {
         if name == "" {
             return Err(RequestError::UserNotExist(name.to_string()));
         } else {
-            let users = match File::get_usernames(Some(dotenv!("FILE_BASE_PATH"))) {
+            let users = match DiskInterface::get_usernames(Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(us) => us,
                 Err(ret) => return Err(RequestError::DiskError(ret)),
             };
             if !users.contains(&name.to_string()) {
-                match File::create_username(name, Some(dotenv!("FILE_BASE_PATH"))) {
+                match DiskInterface::create_username(name, Some(dotenv!("FILE_BASE_PATH"))) {
                     Ok(_) => {}
                     Err(ret) => return Err(RequestError::DiskError(ret)),
                 }

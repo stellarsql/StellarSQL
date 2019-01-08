@@ -1,7 +1,6 @@
 use crate::component::table::Row;
 use crate::sql::worker::{SQLError, SQL};
-use crate::storage::diskinterface::DiskError;
-use crate::storage::file::File;
+use crate::storage::diskinterface::{DiskError, DiskInterface};
 use std::fmt;
 
 use std::collections::{BTreeMap, VecDeque};
@@ -110,13 +109,13 @@ impl Pool {
     fn hierarchic_check(sql: &SQL) -> Result<(), PoolError> {
         // 1. check dirty bit of database
         if sql.database.is_delete {
-            match File::remove_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
+            match DiskInterface::remove_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(_) => return Ok(()),
                 Err(e) => return Err(PoolError::DiskError(e)),
             }
         }
         if sql.database.is_dirty {
-            match File::create_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
+            match DiskInterface::create_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(_) => {}
                 Err(e) => return Err(PoolError::DiskError(e)),
             }
@@ -124,7 +123,7 @@ impl Pool {
         // 2. check dirty bit of tables
         for (name, table) in sql.database.tables.iter() {
             if table.is_delete {
-                match File::drop_table(
+                match DiskInterface::drop_table(
                     &sql.user.name,
                     &sql.database.name,
                     &name,
@@ -136,7 +135,7 @@ impl Pool {
                 continue;
             }
             if table.is_dirty {
-                match File::create_table(
+                match DiskInterface::create_table(
                     &sql.user.name,
                     &sql.database.name,
                     &table,

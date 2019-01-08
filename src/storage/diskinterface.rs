@@ -160,31 +160,38 @@ impl fmt::Display for DiskError {
 #[allow(dead_code)]
 impl DiskInterface {
     pub fn create_file_base(file_base_path: Option<&str>) -> Result<(), DiskError> {
-        Ok(File::create_file_base(file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::create_file_base(base_path)?)
     }
 
     pub fn create_username(username: &str, file_base_path: Option<&str>) -> Result<(), DiskError> {
-        Ok(File::create_username(username, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::create_username(username, base_path)?)
     }
 
     pub fn get_usernames(file_base_path: Option<&str>) -> Result<Vec<String>, DiskError> {
-        Ok(File::get_usernames(file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::get_usernames(base_path)?)
     }
 
     pub fn remove_username(username: &str, file_base_path: Option<&str>) -> Result<(), DiskError> {
-        Ok(File::remove_username(username, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::remove_username(username, base_path)?)
     }
 
     pub fn create_db(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<(), DiskError> {
-        Ok(File::create_db(username, db_name, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::create_db(username, db_name, base_path)?)
     }
 
     pub fn get_dbs(username: &str, file_base_path: Option<&str>) -> Result<Vec<String>, DiskError> {
-        Ok(File::get_dbs(username, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::get_dbs(username, base_path)?)
     }
 
     pub fn remove_db(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<(), DiskError> {
-        Ok(File::remove_db(username, db_name, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::remove_db(username, db_name, base_path)?)
     }
 
     pub fn create_table(
@@ -193,11 +200,13 @@ impl DiskInterface {
         table: &Table,
         file_base_path: Option<&str>,
     ) -> Result<(), DiskError> {
-        Ok(File::create_table(username, db_name, table, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::create_table(username, db_name, table, base_path)?)
     }
 
     pub fn get_tables(username: &str, db_name: &str, file_base_path: Option<&str>) -> Result<Vec<String>, DiskError> {
-        Ok(File::get_tables(username, db_name, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::get_tables(username, db_name, base_path)?)
     }
 
     pub fn load_tables_meta(
@@ -205,7 +214,8 @@ impl DiskInterface {
         db_name: &str,
         file_base_path: Option<&str>,
     ) -> Result<Vec<TableMeta>, DiskError> {
-        Ok(File::load_tables_meta(username, db_name, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::load_tables_meta(username, db_name, base_path)?)
     }
 
     pub fn load_table_meta(
@@ -214,7 +224,8 @@ impl DiskInterface {
         table_name: &str,
         file_base_path: Option<&str>,
     ) -> Result<TableMeta, DiskError> {
-        Ok(File::load_table_meta(username, db_name, table_name, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::load_table_meta(username, db_name, table_name, base_path)?)
     }
 
     pub fn drop_table(
@@ -223,7 +234,8 @@ impl DiskInterface {
         table_name: &str,
         file_base_path: Option<&str>,
     ) -> Result<(), DiskError> {
-        Ok(File::drop_table(username, db_name, table_name, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::drop_table(username, db_name, table_name, base_path)?)
     }
 
     pub fn append_rows(
@@ -233,7 +245,8 @@ impl DiskInterface {
         rows: &Vec<Row>,
         file_base_path: Option<&str>,
     ) -> Result<(), DiskError> {
-        Ok(File::append_rows(username, db_name, table_name, rows, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::append_rows(username, db_name, table_name, rows, base_path)?)
     }
 
     pub fn fetch_rows(
@@ -243,13 +256,8 @@ impl DiskInterface {
         row_range: &Vec<u32>,
         file_base_path: Option<&str>,
     ) -> Result<Vec<Row>, DiskError> {
-        Ok(File::fetch_rows(
-            username,
-            db_name,
-            table_name,
-            row_range,
-            file_base_path,
-        )?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::fetch_rows(username, db_name, table_name, row_range, base_path)?)
     }
 
     pub fn delete_rows(
@@ -259,13 +267,8 @@ impl DiskInterface {
         row_range: &Vec<u32>,
         file_base_path: Option<&str>,
     ) -> Result<(), DiskError> {
-        Ok(File::delete_rows(
-            username,
-            db_name,
-            table_name,
-            row_range,
-            file_base_path,
-        )?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::delete_rows(username, db_name, table_name, row_range, base_path)?)
     }
 
     pub fn modify_rows(
@@ -276,13 +279,9 @@ impl DiskInterface {
         new_rows: &Vec<Row>,
         file_base_path: Option<&str>,
     ) -> Result<(), DiskError> {
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
         Ok(File::modify_rows(
-            username,
-            db_name,
-            table_name,
-            row_range,
-            new_rows,
-            file_base_path,
+            username, db_name, table_name, row_range, new_rows, base_path,
         )?)
     }
 
@@ -292,7 +291,8 @@ impl DiskInterface {
         table_name: &str,
         file_base_path: Option<&str>,
     ) -> Result<u32, DiskError> {
-        Ok(File::get_num_rows(username, db_name, table_name, file_base_path)?)
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        Ok(File::get_num_rows(username, db_name, table_name, base_path)?)
     }
 
     pub fn storage_hierarchy_check(
@@ -423,9 +423,10 @@ impl DiskInterface {
         table_name: &str,
         file_base_path: Option<&str>,
     ) -> Result<Index, DiskError> {
-        let table_meta = DiskInterface::load_table_meta(username, db_name, table_name, file_base_path)?;
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        let table_meta = DiskInterface::load_table_meta(username, db_name, table_name, Some(base_path))?;
         let mut index = Index::new(table_meta)?;
-        index.build_from_bin(file_base_path)?;
+        index.build_from_bin(base_path)?;
 
         Ok(index)
     }
@@ -436,15 +437,17 @@ impl DiskInterface {
         table_name: &str,
         file_base_path: Option<&str>,
     ) -> Result<Index, DiskError> {
-        let table_meta = DiskInterface::load_table_meta(username, db_name, table_name, file_base_path)?;
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        let table_meta = DiskInterface::load_table_meta(username, db_name, table_name, Some(base_path))?;
         let mut index = Index::new(table_meta)?;
-        index.load(file_base_path)?;
+        index.load(base_path)?;
 
         Ok(index)
     }
 
     pub fn save_index(index: &Index, file_base_path: Option<&str>) -> Result<(), DiskError> {
-        index.save(file_base_path)?;
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+        index.save(base_path)?;
 
         Ok(())
     }

@@ -47,10 +47,7 @@ impl Index {
     }
 
     /// build index from table bin file
-    pub fn build_from_bin(&mut self, file_base_path: Option<&str>) -> Result<(), DiskError> {
-        // determine file base path
-        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
-
+    pub fn build_from_bin(&mut self, base_path: &str) -> Result<(), DiskError> {
         // perform storage check toward table level
         DiskInterface::storage_hierarchy_check(
             base_path,
@@ -96,10 +93,7 @@ impl Index {
     }
 
     /// save(overwrite) index table into index file
-    pub fn save(&self, file_base_path: Option<&str>) -> Result<(), DiskError> {
-        // determine file base path
-        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
-
+    pub fn save(&self, base_path: &str) -> Result<(), DiskError> {
         // perform storage check toward table level
         DiskInterface::storage_hierarchy_check(
             base_path,
@@ -135,10 +129,7 @@ impl Index {
     }
 
     /// Load index from storage
-    pub fn load(&mut self, file_base_path: Option<&str>) -> Result<(), DiskError> {
-        // determine file base path
-        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
-
+    pub fn load(&mut self, base_path: &str) -> Result<(), DiskError> {
         // perform storage check toward table level
         DiskInterface::storage_hierarchy_check(
             base_path,
@@ -371,11 +362,9 @@ mod tests {
         DiskInterface::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 3], Some(file_base_path)).unwrap();
         DiskInterface::delete_rows("crazyguy", "BookerDB", "Affiliates", &vec![4, 6], Some(file_base_path)).unwrap();
 
-        let table_meta =
-            DiskInterface::load_table_meta("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap();
-
-        let mut index = Index::new(table_meta).unwrap();
-        index.build_from_bin(Some(file_base_path)).unwrap();
+        let index =
+            DiskInterface::build_index_from_table_bin("crazyguy", "BookerDB", "Affiliates", Some(file_base_path))
+                .unwrap();
 
         assert_eq!(index.index_data.len(), 5);
         assert_eq!(index.num_rows, 8);
@@ -385,8 +374,10 @@ mod tests {
         }
 
         let index_data = index.index_data.to_vec();
-        index.save(Some(file_base_path)).unwrap();
-        index.load(Some(file_base_path)).unwrap();
+
+        DiskInterface::save_index(&index, Some(file_base_path)).unwrap();
+        let mut index = DiskInterface::load_index("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap();
+
         assert_eq!(index_data, index.index_data);
 
         let data = vec![
@@ -424,8 +415,10 @@ mod tests {
         );
 
         let index_data = index.index_data.to_vec();
-        index.save(Some(file_base_path)).unwrap();
-        index.load(Some(file_base_path)).unwrap();
+
+        DiskInterface::save_index(&index, Some(file_base_path)).unwrap();
+        let index = DiskInterface::load_index("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap();
+
         assert_eq!(index_data, index.index_data);
     }
 }

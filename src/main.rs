@@ -30,7 +30,7 @@ use env_logger;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 
-use crate::storage::file::File;
+use crate::storage::diskinterface::DiskInterface;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -89,7 +89,7 @@ fn env_init() {
     // check ../.env: FILE_BASE_PATH, create usernames.json
     let path = dotenv!("FILE_BASE_PATH");
     if !Path::new(path).exists() {
-        File::create_file_base(Some(path));
+        DiskInterface::create_file_base(Some(path));
     }
 }
 

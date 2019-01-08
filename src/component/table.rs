@@ -1,8 +1,6 @@
 use crate::component::datatype::DataType;
 use crate::component::field::Field;
-use crate::storage::diskinterface::DiskError;
-use crate::storage::diskinterface::TableMeta;
-use crate::storage::file::File;
+use crate::storage::diskinterface::{DiskError, DiskInterface, TableMeta};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
@@ -123,8 +121,8 @@ impl Table {
     /// Load a table with meta data
     #[allow(dead_code)]
     pub fn load_meta(username: &str, db_name: &str, table_name: &str) -> Result<Table, TableError> {
-        let meta =
-            File::load_table_meta(username, db_name, table_name, None).map_err(|e| TableError::CausedByFile(e))?;
+        let meta = DiskInterface::load_table_meta(username, db_name, table_name, None)
+            .map_err(|e| TableError::CausedByFile(e))?;
         let mut table = Table::new(table_name);
 
         table.format_meta(meta);
@@ -145,7 +143,7 @@ impl Table {
     /// load the particular range of rows from storage
     pub fn load_rows_data(&mut self, username: &str, db_name: &str) -> Result<(), TableError> {
         // TODO: read index file, find all row data range, call fetch_rows
-        //let row_data = File::fetch_rows(username, db_name, self.name, , None).unwrap().map_err(|e| TableError::CauseByFile(e))?;
+        //let row_data = DiskInterface::fetch_rows(username, db_name, self.name, , None).unwrap().map_err(|e| TableError::CauseByFile(e))?;
         //self.rows = row_data;
         self.is_data_loaded = true;
         Ok(())
