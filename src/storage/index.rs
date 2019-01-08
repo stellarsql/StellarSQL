@@ -1,7 +1,8 @@
 extern crate byteorder;
 
+use crate::component::table::Row;
+use crate::storage::bytescoder::BytesCoder;
 use crate::storage::diskinterface::{DiskError, DiskInterface, TableMeta};
-
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::fs;
 use std::io::{BufReader, Read, Write};
@@ -10,47 +11,8 @@ use std::path::Path;
 pub struct Index {
     table_meta: TableMeta,
     index_data: Vec<RowPair>,
+    num_rows: u32, // row number of the table including deleted
 }
-
-// /// meta data of raw table
-// #[derive(Debug)]
-// pub struct TableMeta {
-//     table_name: String, // name of raw table
-//     key_type: KeyType,  // type of primary key in raw table
-//     key_offset: u32,    // byte position of first primary key in raw table
-//     key_bytes: u32,     // bytes of primary key in raw table
-//     row_bytes: u32,     // bytes of each row in raw table
-// }
-
-// /// row and key value pair in which key type is int
-// pub struct RowPairInt {
-//     row: u32,
-//     key_value: u32,
-// }
-
-// impl RowPairInt {
-//     fn new(pair: (u32, &str)) -> RowPairInt {
-//         RowPairInt {
-//             row: pair.0,
-//             key_value: pair.1.parse::<u32>().unwrap(),
-//         }
-//     }
-// }
-
-// /// row and key value pair in which key type is string
-// pub struct RowPairString {
-//     row: u32,
-//     key_value: Vec<u8>,
-// }
-
-// impl RowPairString {
-//     fn new(pair: (u32, &str)) -> RowPairString {
-//         RowPairString {
-//             row: pair.0,
-//             key_value: pair.1.as_bytes().to_vec(),
-//         }
-//     }
-// }
 
 /// (row, key_value) pair
 #[derive(Debug, Clone, Eq, Ord, PartialEq, PartialOrd)]
@@ -73,19 +35,6 @@ impl RowPair {
     }
 }
 
-// #[allow(dead_code)]
-// pub enum IndexData {
-//     IndexInt(Vec<RowPairInt>),
-//     IndexString(Vec<RowPairString>),
-//     None,
-// }
-
-// #[derive(Debug, PartialEq)]
-// pub enum KeyType {
-//     Int,
-//     String,
-// }
-
 #[allow(dead_code)]
 impl Index {
     /// construct a new Index
@@ -93,6 +42,7 @@ impl Index {
         Ok(Index {
             table_meta,
             index_data: vec![],
+            num_rows: 0,
         })
     }
 
@@ -123,6 +73,7 @@ impl Index {
 
         // parse chunk of bytes to vector of rows
         let mut new_index_data: Vec<RowPair> = vec![];
+        let mut num_rows: u32 = 0;
         for (row_id, row_bytes) in chunk_bytes.chunks(self.table_meta.row_length as usize).enumerate() {
             // ignore deleted rows
             if row_bytes[0] == 1 as u8 {
@@ -133,11 +84,13 @@ impl Index {
                         .to_vec(),
                 ));
             }
+            num_rows += 1;
         }
 
         new_index_data.sort_by(|rp1, rp2| rp1.key_value.cmp(&rp2.key_value));
 
         self.index_data = new_index_data;
+        self.num_rows = num_rows;
 
         Ok(())
     }
@@ -224,79 +177,40 @@ impl Index {
         }
 
         self.index_data = index_data;
+        self.num_rows = DiskInterface::get_num_rows(
+            &self.table_meta.username,
+            &self.table_meta.db_name,
+            &self.table_meta.name,
+            Some(base_path),
+        )?;
 
         Ok(())
     }
 
-    // /// insert a row-key pair into the index
-    // pub fn insert_index_table(&mut self, value_pair: (u32, &str)) -> Result<(), IndexError> {
-    //     let key_type = match value_pair.1.parse::<u32>() {
-    //         Ok(_) => KeyType::Int,
-    //         Err(_) => KeyType::String,
-    //     };
+    // insert a row-key pair into the index
+    pub fn insert(&mut self, row: &Row) -> Result<(), DiskError> {
+        let new_row_pair = RowPair::new(
+            self.num_rows.clone(),
+            BytesCoder::attr_to_bytes(
+                &self.table_meta.attrs[&self.table_meta.primary_key[0]].datatype,
+                row.data
+                    .get(&self.table_meta.primary_key[0])
+                    .ok_or_else(|| DiskError::AttrNotExists)?,
+            )?,
+        );
+        match self
+            .index_data
+            .binary_search_by(|rp| rp.key_value.cmp(&new_row_pair.key_value))
+        {
+            Ok(_pos) => return Err(DiskError::DuplicatedKey),
+            Err(pos) => {
+                self.index_data.insert(pos, new_row_pair);
+                self.num_rows += 1;
+            }
+        }
 
-    //     match self.index_data {
-    //         IndexData::IndexInt(ref mut index_int) => match key_type {
-    //             KeyType::Int => {
-    //                 let pair = RowPairInt::new(value_pair);
-    //                 Index::insert_int_index_table(pair, index_int)
-    //             }
-    //             KeyType::String => Err(IndexError::InsertValueMismatchIndex),
-    //         },
-    //         IndexData::IndexString(ref mut index_string) => match key_type {
-    //             KeyType::Int => Err(IndexError::InsertValueMismatchIndex),
-    //             KeyType::String => {
-    //                 let pair = RowPairString::new(value_pair);
-    //                 Index::insert_string_index_table(pair, index_string)
-    //             }
-    //         },
-    //         IndexData::None => Ok(()), // should not happen
-    //     }
-    // }
-
-    // /// insert into index table in which primary key type is int
-    // fn insert_int_index_table(insert_value: RowPairInt, index_arr: &mut Vec<RowPairInt>) -> Result<(), IndexError> {
-    //     if index_arr.is_empty() {
-    //         index_arr.push(insert_value);
-    //     } else {
-    //         let mut target = 0;
-    //         for i in 0..index_arr.len() {
-    //             if insert_value.key_value <= index_arr[i].key_value {
-    //                 target = i;
-    //                 break;
-    //             }
-    //         }
-    //         if target == 0 {
-    //             index_arr.insert(target, insert_value);
-    //         } else {
-    //             index_arr.insert(target - 1, insert_value);
-    //         }
-    //     }
-    //     Ok(())
-    // }
-
-    // fn insert_string_index_table(
-    //     insert_value: RowPairString,
-    //     index_arr: &mut Vec<RowPairString>,
-    // ) -> Result<(), IndexError> {
-    //     if index_arr.is_empty() {
-    //         index_arr.push(insert_value);
-    //     } else {
-    //         let mut target = 0;
-    //         for i in 0..index_arr.len() {
-    //             if insert_value.key_value <= index_arr[i].key_value {
-    //                 target = i;
-    //                 break;
-    //             }
-    //         }
-    //         if target == 0 {
-    //             index_arr.insert(target, insert_value);
-    //         } else {
-    //             index_arr.insert(target - 1, insert_value);
-    //         }
-    //     }
-    //     Ok(())
-    // }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -310,7 +224,7 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    pub fn test_build_save_load() {
+    pub fn test_build_save_load_insert() {
         let file_base_path = "data9";
         if Path::new(file_base_path).exists() {
             fs::remove_dir_all(file_base_path).unwrap();
@@ -378,7 +292,7 @@ mod tests {
         ];
         aff_table.insert_row(data).unwrap();
 
-        // d
+        // to be deleted
         let data = vec![
             ("AffID", "6"),
             ("AffName", "Leo"),
@@ -395,7 +309,7 @@ mod tests {
         ];
         aff_table.insert_row(data).unwrap();
 
-        // d
+        // to be deleted
         let data = vec![
             ("AffID", "4"),
             ("AffName", "Ray"),
@@ -404,7 +318,7 @@ mod tests {
         ];
         aff_table.insert_row(data).unwrap();
 
-        // d
+        // to be deleted
         let data = vec![
             ("AffID", "5"),
             ("AffName", "Bryn"),
@@ -443,10 +357,12 @@ mod tests {
 
         let table_meta =
             DiskInterface::load_table_meta("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap();
+
         let mut index = Index::new(table_meta).unwrap();
         index.build_from_bin(Some(file_base_path)).unwrap();
 
         assert_eq!(index.index_data.len(), 5);
+        assert_eq!(index.num_rows, 8);
 
         for i in 1..index.index_data.len() {
             assert!(index.index_data[i - 1].key_value < index.index_data[i].key_value);
@@ -456,5 +372,20 @@ mod tests {
         index.save(Some(file_base_path)).unwrap();
         index.load(Some(file_base_path)).unwrap();
         assert_eq!(index_data, index.index_data);
+
+        let data = vec![
+            ("AffID", "5"),
+            ("AffName", "Allie"),
+            ("AffEmail", "allie@doo.com"),
+            ("AffPhoneNum", "+886900000005"),
+        ];
+        aff_table.insert_row(data).unwrap();
+
+        index.insert(&aff_table.rows[aff_table.rows.len() - 1]).unwrap();
+        assert_eq!(index.index_data.len(), 6);
+        for i in 1..index.index_data.len() {
+            assert!(index.index_data[i - 1].key_value < index.index_data[i].key_value);
+        }
+        assert_eq!(index.num_rows, 9);
     }
 }

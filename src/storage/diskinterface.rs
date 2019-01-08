@@ -91,6 +91,7 @@ pub enum DiskError {
     RangeAndNumRowsMismatch,
     AttrNotExists,
     BytesError,
+    DuplicatedKey,
 }
 
 impl From<io::Error> for DiskError {
@@ -146,6 +147,7 @@ impl fmt::Display for DiskError {
             }
             DiskError::AttrNotExists => write!(f, "The row does not contain specified attribute."),
             DiskError::BytesError => write!(f, "Error raised from BytesCoder."),
+            DiskError::DuplicatedKey => write!(f, "Attempting to insert an duplicated key to index."),
         }
     }
 }
@@ -277,6 +279,15 @@ impl DiskInterface {
             new_rows,
             file_base_path,
         )?)
+    }
+
+    pub fn get_num_rows(
+        username: &str,
+        db_name: &str,
+        table_name: &str,
+        file_base_path: Option<&str>,
+    ) -> Result<u32, DiskError> {
+        Ok(File::get_num_rows(username, db_name, table_name, file_base_path)?)
     }
 
     pub fn storage_hierarchy_check(

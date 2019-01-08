@@ -864,6 +864,42 @@ impl File {
 
         Ok(())
     }
+
+    pub fn get_num_rows(
+        username: &str,
+        db_name: &str,
+        table_name: &str,
+        file_base_path: Option<&str>,
+    ) -> Result<u32, DiskError> {
+        // determine file base path
+        let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
+
+        // perform storage check toward table level
+        DiskInterface::storage_hierarchy_check(base_path, Some(username), Some(db_name), Some(table_name))
+            .map_err(|e| e)?;
+
+        // load current tables from `tables.json`
+        let tables_json_path = format!("{}/{}/{}/{}", base_path, username, db_name, "tables.json");
+        let tables_file = fs::File::open(&tables_json_path)?;
+        let tables_json: TablesJson = serde_json::from_reader(tables_file)?;
+
+        // locate meta of target table
+        let idx_target = tables_json
+            .tables
+            .iter()
+            .position(|table_meta| &table_meta.name == table_name);
+
+        let table_meta_target: &TableMeta = match idx_target {
+            Some(idx) => &tables_json.tables[idx],
+            None => return Err(DiskError::TableNotExists),
+        };
+
+        // load corresponding chunk of bytes from table bin
+        let table_bin_path = format!("{}/{}/{}/{}.bin", base_path, username, db_name, table_name);
+        let table_bin_file_meta = fs::metadata(&table_bin_path)?;
+
+        Ok((table_bin_file_meta.len() / table_meta_target.row_length as u64) as u32)
+    }
 }
 
 #[cfg(test)]
@@ -1514,6 +1550,11 @@ mod tests {
             assert_eq!(aff_tsv_content[3], "1\t3\tleo@dee.com\tLeo\t+886900000003".to_string());
         }
 
+        assert_eq!(
+            File::get_num_rows("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap(),
+            3
+        );
+
         let rows: Vec<Row> =
             File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![0, 1], Some(file_base_path)).unwrap();
 
@@ -1638,6 +1679,11 @@ mod tests {
             DiskError::RangeContainsDeletedRecord,
         );
 
+        assert_eq!(
+            File::get_num_rows("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap(),
+            6
+        );
+
         let rows: Vec<Row> =
             File::fetch_rows("crazyguy", "BookerDB", "Affiliates", &vec![2, 5], Some(file_base_path)).unwrap();
 
@@ -1735,6 +1781,11 @@ mod tests {
             )
             .unwrap_err(),
             DiskError::RangeExceedLatestRecord
+        );
+
+        assert_eq!(
+            File::get_num_rows("crazyguy", "BookerDB", "Affiliates", Some(file_base_path)).unwrap(),
+            8
         );
 
         let rows: Vec<Row> =
