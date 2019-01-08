@@ -1,6 +1,6 @@
 use crate::manager::pool::{Pool, PoolError};
 use crate::sql::parser::{Parser, ParserError};
-use crate::storage::file::{File, FileError};
+use crate::storage::diskinterface::{DiskError, DiskInterface};
 use crate::Response;
 use std::fmt;
 
@@ -17,7 +17,7 @@ pub struct Request {
 pub enum RequestError {
     PoolError(PoolError),
     CauseByParser(ParserError),
-    FileError(FileError),
+    DiskError(DiskError),
     UserNotExist(String),
     CreateDBBeforeCmd,
     BadRequest,
@@ -29,7 +29,7 @@ impl fmt::Display for RequestError {
         match *self {
             RequestError::PoolError(ref e) => write!(f, "error caused by pool: {}", e),
             RequestError::CauseByParser(ref e) => write!(f, "error caused by parser: {}", e),
-            RequestError::FileError(ref e) => write!(f, "error caused by file: {}", e),
+            RequestError::DiskError(ref e) => write!(f, "error caused by file: {}", e),
             RequestError::UserNotExist(ref s) => write!(f, "user: {} not found", s),
             RequestError::CreateDBBeforeCmd => write!(f, "please create a database before any other commands"),
             RequestError::BadRequest => write!(f, "BadRequest, invalid request format"),
@@ -143,14 +143,14 @@ impl Request {
         if name == "" {
             return Err(RequestError::UserNotExist(name.to_string()));
         } else {
-            let users = match File::get_usernames(Some(dotenv!("FILE_BASE_PATH"))) {
+            let users = match DiskInterface::get_usernames(Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(us) => us,
-                Err(ret) => return Err(RequestError::FileError(ret)),
+                Err(ret) => return Err(RequestError::DiskError(ret)),
             };
             if !users.contains(&name.to_string()) {
-                match File::create_username(name, Some(dotenv!("FILE_BASE_PATH"))) {
+                match DiskInterface::create_username(name, Some(dotenv!("FILE_BASE_PATH"))) {
                     Ok(_) => {}
-                    Err(ret) => return Err(RequestError::FileError(ret)),
+                    Err(ret) => return Err(RequestError::DiskError(ret)),
                 }
             }
         }

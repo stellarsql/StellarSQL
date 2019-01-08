@@ -1,6 +1,6 @@
 use crate::component::table::Row;
 use crate::sql::worker::{SQLError, SQL};
-use crate::storage::file::{File, FileError};
+use crate::storage::diskinterface::{DiskError, DiskInterface};
 use std::fmt;
 
 use std::collections::{BTreeMap, VecDeque};
@@ -19,7 +19,7 @@ pub struct Pool {
 pub enum PoolError {
     SQLError(SQLError),
     EntryNotExist,
-    FileError(FileError),
+    DiskError(DiskError),
 }
 
 impl fmt::Display for PoolError {
@@ -27,7 +27,7 @@ impl fmt::Display for PoolError {
         match *self {
             PoolError::SQLError(ref e) => write!(f, "error cause by worker: {}", e),
             PoolError::EntryNotExist => write!(f, "entry is not existed"),
-            PoolError::FileError(ref e) => write!(f, "error cause by file: {}", e),
+            PoolError::DiskError(ref e) => write!(f, "error cause by file: {}", e),
         }
     }
 }
@@ -109,40 +109,40 @@ impl Pool {
     fn hierarchic_check(sql: &SQL) -> Result<(), PoolError> {
         // 1. check dirty bit of database
         if sql.database.is_delete {
-            match File::remove_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
+            match DiskInterface::remove_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(_) => return Ok(()),
-                Err(e) => return Err(PoolError::FileError(e)),
+                Err(e) => return Err(PoolError::DiskError(e)),
             }
         }
         if sql.database.is_dirty {
-            match File::create_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
+            match DiskInterface::create_db(&sql.user.name, &sql.database.name, Some(dotenv!("FILE_BASE_PATH"))) {
                 Ok(_) => {}
-                Err(e) => return Err(PoolError::FileError(e)),
+                Err(e) => return Err(PoolError::DiskError(e)),
             }
         }
         // 2. check dirty bit of tables
         for (name, table) in sql.database.tables.iter() {
             if table.is_delete {
-                match File::drop_table(
+                match DiskInterface::drop_table(
                     &sql.user.name,
                     &sql.database.name,
                     &name,
                     Some(dotenv!("FILE_BASE_PATH")),
                 ) {
                     Ok(_) => {}
-                    Err(e) => return Err(PoolError::FileError(e)),
+                    Err(e) => return Err(PoolError::DiskError(e)),
                 }
                 continue;
             }
             if table.is_dirty {
-                match File::create_table(
+                match DiskInterface::create_table(
                     &sql.user.name,
                     &sql.database.name,
                     &table,
                     Some(dotenv!("FILE_BASE_PATH")),
                 ) {
                     Ok(_) => {}
-                    Err(e) => return Err(PoolError::FileError(e)),
+                    Err(e) => return Err(PoolError::DiskError(e)),
                 }
             }
             // 3. check dirty bit of rows
@@ -155,7 +155,7 @@ impl Pool {
                 }
             }
             if !new_row.is_empty() {
-                match File::append_rows(
+                match DiskInterface::append_rows(
                     &sql.user.name,
                     &sql.database.name,
                     &name,
@@ -163,7 +163,7 @@ impl Pool {
                     Some(dotenv!("FILE_BASE_PATH")),
                 ) {
                     Ok(_) => {}
-                    Err(e) => return Err(PoolError::FileError(e)),
+                    Err(e) => return Err(PoolError::DiskError(e)),
                 }
             }
         }

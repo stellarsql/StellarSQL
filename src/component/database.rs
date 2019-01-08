@@ -1,6 +1,5 @@
 use crate::component::table::Table;
-use crate::storage::file::File;
-use crate::storage::file::FileError;
+use crate::storage::diskinterface::{DiskError, DiskInterface};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -16,7 +15,7 @@ pub struct Database {
 
 #[derive(Debug)]
 pub enum DatabaseError {
-    CausedByFile(FileError),
+    CausedByFile(DiskError),
 }
 
 impl fmt::Display for DatabaseError {
@@ -45,7 +44,8 @@ impl Database {
     pub fn load_db(username: &str, db_name: &str) -> Result<Database, DatabaseError> {
         let mut db = Database::new(db_name);
         db.is_dirty = false;
-        let metas = File::load_tables_meta(username, db_name, None).map_err(|e| DatabaseError::CausedByFile(e))?;
+        let metas =
+            DiskInterface::load_tables_meta(username, db_name, None).map_err(|e| DatabaseError::CausedByFile(e))?;
         for meta in metas {
             let name = (&meta.name).to_string();
             let mut table = Table::new(&name);
