@@ -4,7 +4,9 @@
 
 (WIP) A minimal SQL DBMS written in Rust
 
-There is a series of articles introducing about this project: [Let's build a DBMS](https://tigercosmos.xyz/lets-build-dbms/)
+- The document is [here](https://tigercosmos.xyz/StellarSQL/stellar_sql/).
+- There is a [slide](https://docs.google.com/presentation/d/1rSxFNpN5uzP1cF1olKTnyXgPdj_bcbLvSJhN5T5xn-U/edit?usp=sharing) introduce this project.
+- There is a series of articles introducing about this project: [Let's build a DBMS](https://tigercosmos.xyz/lets-build-dbms/)
 
 ![logo](https://raw.githubusercontent.com/tigercosmos/StellarSQL/master/logo/logo.png)
 
