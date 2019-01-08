@@ -4,6 +4,7 @@ use crate::component::table::Row;
 use crate::component::table::Table;
 use crate::storage::bytescoder;
 use crate::storage::file::File;
+use crate::storage::index::Index;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
@@ -414,6 +415,38 @@ impl DiskInterface {
             DataType::Int => 4,
             DataType::Varchar(length) => length.clone() as u32,
         }
+    }
+
+    pub fn build_index_from_table_bin(
+        username: &str,
+        db_name: &str,
+        table_name: &str,
+        file_base_path: Option<&str>,
+    ) -> Result<Index, DiskError> {
+        let table_meta = DiskInterface::load_table_meta(username, db_name, table_name, file_base_path)?;
+        let mut index = Index::new(table_meta)?;
+        index.build_from_bin(file_base_path)?;
+
+        Ok(index)
+    }
+
+    pub fn load_index(
+        username: &str,
+        db_name: &str,
+        table_name: &str,
+        file_base_path: Option<&str>,
+    ) -> Result<Index, DiskError> {
+        let table_meta = DiskInterface::load_table_meta(username, db_name, table_name, file_base_path)?;
+        let mut index = Index::new(table_meta)?;
+        index.load(file_base_path)?;
+
+        Ok(index)
+    }
+
+    pub fn save_index(index: &Index, file_base_path: Option<&str>) -> Result<(), DiskError> {
+        index.save(file_base_path)?;
+
+        Ok(())
     }
 }
 

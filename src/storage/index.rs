@@ -37,7 +37,7 @@ impl RowPair {
 
 #[allow(dead_code)]
 impl Index {
-    /// construct a new Index
+    //// construct a new Index
     pub fn new(table_meta: TableMeta) -> Result<Index, DiskError> {
         Ok(Index {
             table_meta,
@@ -46,8 +46,8 @@ impl Index {
         })
     }
 
-    // build index from table bin file
-    fn build_from_bin(&mut self, file_base_path: Option<&str>) -> Result<(), DiskError> {
+    /// build index from table bin file
+    pub fn build_from_bin(&mut self, file_base_path: Option<&str>) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
@@ -95,8 +95,8 @@ impl Index {
         Ok(())
     }
 
-    // save(overwrite) index table into index file
-    fn save(&self, file_base_path: Option<&str>) -> Result<(), DiskError> {
+    /// save(overwrite) index table into index file
+    pub fn save(&self, file_base_path: Option<&str>) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
 
@@ -134,7 +134,7 @@ impl Index {
         Ok(())
     }
 
-    // Load index from storage
+    /// Load index from storage
     pub fn load(&mut self, file_base_path: Option<&str>) -> Result<(), DiskError> {
         // determine file base path
         let base_path = file_base_path.unwrap_or(dotenv!("FILE_BASE_PATH"));
@@ -187,7 +187,7 @@ impl Index {
         Ok(())
     }
 
-    // insert a row-key pair into the index
+    /// insert a row-key pair into the index
     pub fn insert(&mut self, row: &Row) -> Result<(), DiskError> {
         let new_row_pair = RowPair::new(
             self.num_rows.clone(),
@@ -212,7 +212,7 @@ impl Index {
         Ok(())
     }
 
-    // delete a row-key pair from the index
+    /// delete a row-key pair from the index
     pub fn delete(&mut self, row: &Row) -> Result<(), DiskError> {
         let key_val = BytesCoder::attr_to_bytes(
             &self.table_meta.attrs[&self.table_meta.primary_key[0]].datatype,
