@@ -155,7 +155,7 @@ impl Pool {
                 }
             }
             if !new_row.is_empty() {
-                match File::append_rows(
+                match DiskInterface::append_rows(
                     &sql.user.name,
                     &sql.database.name,
                     &name,
@@ -163,7 +163,7 @@ impl Pool {
                     Some(dotenv!("FILE_BASE_PATH")),
                 ) {
                     Ok(_) => {}
-                    Err(e) => return Err(PoolError::FileError(e)),
+                    Err(e) => return Err(PoolError::DiskError(e)),
                 }
             }
         }
