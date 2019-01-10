@@ -85,11 +85,17 @@ fn main() {
     tokio::run(server);
 }
 
+/// initialize the environment
+///
+/// Note that any error are not allowed in this step, so panic directly.
 fn env_init() {
-    // check ../.env: FILE_BASE_PATH, create usernames.json
+    // check `../.env`: FILE_BASE_PATH, create usernames.json
     let path = dotenv!("FILE_BASE_PATH");
     if !Path::new(path).exists() {
-        DiskInterface::create_file_base(Some(path));
+        match DiskInterface::create_file_base(Some(path)) {
+            Ok(_) => {}
+            Err(e) => panic!(e),
+        }
     }
 }
 
@@ -131,7 +137,13 @@ fn process(socket: TcpStream, mutex: &'static Arc<Mutex<Pool>>, addr: std::net::
     let connection = writes.then(move |_| {
         // write back
         let mut pool = mutex.lock().unwrap();
-        pool.write_back(addr.to_string());
+
+        // TODO: retry if failed once
+        match pool.write_back(addr.to_string()) {
+            Ok(_) => {}
+            // if failed to write back to client, just log error.
+            Err(e) => error!("{}", e),
+        }
         Ok(())
     });
 
