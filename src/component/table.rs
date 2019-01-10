@@ -206,6 +206,15 @@ impl Table {
         Ok(())
     }
 
+    /// return the set of all rows' id of the table
+    pub fn get_all_rows_set(&self) -> HashSet<usize> {
+        let mut set: HashSet<usize> = HashSet::new();
+        for i in 0..self.rows.len() {
+            set.insert(i);
+        }
+        set
+    }
+
     /// filter rows by the predicate and update the row_set
     ///
     /// Note: this assume all data of rows and the predicate follow the rules, so there is no check for

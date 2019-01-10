@@ -295,6 +295,20 @@ fn table_predicate(tb: &mut Table, node: &mut NodePtr) -> Result<(), SQLError> {
                 };
             }
 
+            if right {
+                match this_node_root {
+                    "not" => {
+                        let all = tb.get_all_rows_set();
+                        let set: HashSet<usize> = all.difference(&right_node_set).cloned().collect();
+                        (*p).set = set;
+                        // cut the tree
+                        (*p).left = None;
+                        (*p).right = None;
+                    }
+                    _ => {}
+                }
+            }
+
             debug!("this node set: {:?}", (*p).set);
         }
         None => {}
@@ -315,15 +329,12 @@ mod tests {
         let query = "create table t1 (a1 int, a2 char(7), a3 double);";
         Parser::new(query).unwrap().parse(&mut sql).unwrap();
 
-        let query = "insert into t1(a1, a2, a3) values (1, 'aaa', 2.1);";
-        Parser::new(query).unwrap().parse(&mut sql).unwrap();
-        let query = "insert into t1(a1, a2, a3) values (2, 'aaa', 2.2);";
-        Parser::new(query).unwrap().parse(&mut sql).unwrap();
-        let query = "insert into t1(a1, a2, a3) values (3, 'bbb', 2.3);";
-        Parser::new(query).unwrap().parse(&mut sql).unwrap();
-        let query = "insert into t1(a1, a2, a3) values (4, 'bbb', 2.4);";
-        Parser::new(query).unwrap().parse(&mut sql).unwrap();
-        let query = "insert into t1(a1, a2, a3) values (5, 'bbb', 2.5);";
+        let query = "insert into t1(a1, a2, a3) values
+                        (1, 'aaa', 2.1),
+                        (2, 'aaa', 2.2),
+                        (3, 'bbb', 2.3),
+                        (4, 'bbb', 2.4),
+                        (5, 'bbb', 2.5);";
         Parser::new(query).unwrap().parse(&mut sql).unwrap();
 
         sql
@@ -353,6 +364,52 @@ mod tests {
         assert_eq!(
             sql.result_json,
             "{\"fields\":[\"a1\",\"a2\",\"a3\"],\"rows\":[[\"1\",\"\'aaa\'\",\"2.1\"],[\"5\",\"\'bbb\'\",\"2.5\"]]}"
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn test_select_where_not() {
+        let mut sql = fake_sql();
+
+        let query = "select a1, a2, a3 from t1 where not a1 < 2;";
+        Parser::new(query).unwrap().parse(&mut sql).unwrap();
+
+        assert_eq!(
+            sql.result_json,
+            "{\"fields\":[\"a1\",\"a2\",\"a3\"],\"rows\":[[\"2\",\"\'aaa\'\",\"2.2\"],[\"3\",\"\'bbb\'\",\"2.3\"],[\"4\",\"\'bbb\'\",\"2.4\"],[\"5\",\"\'bbb\'\",\"2.5\"]]}"
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn test_select_where_not_with_and() {
+        env_logger::init();
+
+        let mut sql = fake_sql();
+
+        let query = "select a1, a2, a3 from t1 where not a1 < 2 and not a2 = 'aaa';";
+        Parser::new(query).unwrap().parse(&mut sql).unwrap();
+
+        assert_eq!(
+            sql.result_json,
+            "{\"fields\":[\"a1\",\"a2\",\"a3\"],\"rows\":[[\"3\",\"\'bbb\'\",\"2.3\"],[\"4\",\"\'bbb\'\",\"2.4\"],[\"5\",\"\'bbb\'\",\"2.5\"]]}"
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn test_select_where_complicated_predicate() {
+        env_logger::init();
+
+        let mut sql = fake_sql();
+
+        let query = "select a1, a2, a3 from t1 where not (not a1 < 2 and not (not a2 = 'aaa' or a3 > 2.3));";
+        Parser::new(query).unwrap().parse(&mut sql).unwrap();
+
+        assert_eq!(
+            sql.result_json,
+            "{\"fields\":[\"a1\",\"a2\",\"a3\"],\"rows\":[[\"1\",\"\'aaa\'\",\"2.1\"],[\"3\",\"\'bbb\'\",\"2.3\"],[\"4\",\"\'bbb\'\",\"2.4\"],[\"5\",\"\'bbb\'\",\"2.5\"]]}"
                 .to_string()
         );
     }
