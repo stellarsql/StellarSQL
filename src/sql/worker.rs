@@ -384,8 +384,6 @@ mod tests {
 
     #[test]
     fn test_select_where_not_with_and() {
-        env_logger::init();
-
         let mut sql = fake_sql();
 
         let query = "select a1, a2, a3 from t1 where not a1 < 2 and not a2 = 'aaa';";
@@ -400,8 +398,6 @@ mod tests {
 
     #[test]
     fn test_select_where_complicated_predicate() {
-        env_logger::init();
-
         let mut sql = fake_sql();
 
         let query = "select a1, a2, a3 from t1 where not (not a1 < 2 and not (not a2 = 'aaa' or a3 > 2.3));";
