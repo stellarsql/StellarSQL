@@ -1,5 +1,7 @@
 import socket
 import sys
+import rlcompleter
+import readline
 
 
 def run(host, port):
@@ -119,6 +121,8 @@ class Client():
 if __name__ == '__main__':
     host = '127.0.0.1'
     port = 23333
+
+    readline.parse_and_bind("tab: complete")
 
     if len(sys.argv) == 3:
         host = sys.argv[1]
