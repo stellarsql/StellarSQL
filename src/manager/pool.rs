@@ -180,7 +180,7 @@ mod tests {
     fn test_multithread_correctness() {}
 
     #[test]
-    fn test_pool_LRU_algorithm() {}
+    fn test_pool_lru_algorithm() {}
 
     #[test]
     fn test_db_writeback() {}

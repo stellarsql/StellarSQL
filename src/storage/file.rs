@@ -1,11 +1,9 @@
-use crate::component::field::Field;
 use crate::component::table::Row;
 use crate::component::table::Table;
 use crate::storage::bytescoder::BytesCoder;
 use crate::storage::diskinterface::{
     DbInfo, DbsJson, DiskError, DiskInterface, TableMeta, TablesJson, UsernameInfo, UsernamesJson,
 };
-use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
@@ -836,6 +834,9 @@ mod tests {
     use super::*;
     use crate::component::datatype::DataType;
     use crate::component::field;
+    use crate::component::field::Field;
+    use std::collections::HashMap;
+
     #[test]
     pub fn test_create_file_base() {
         let file_base_path = "data0";
