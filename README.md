@@ -59,7 +59,7 @@ SQL query are not implement very well. A few simple command support for now:
 - insert into
 - select {fields} from {table} where {predicate}
   - not yet support join, only a table
-  - predicate without NOT, NULL
+  - predicate without NULL
 
 The default `host` and `port` are `127.0.0.1` and `23333`
 
@@ -85,6 +85,9 @@ StellarSQL> select a1, b1, c1 from t1 where a1 > 1;
 
 StellarSQL> select a1, b1, c1 from t1 where a1 > 1 and c1 > 2;
 {"fields":["a1","b1","c1"],"rows":[["2","3","4.5"]]}
+
+StellarSQL> select a1, b1, c1 from t1 where not (not a1 < 2 and not (not b1 = 3 or c1 > 1.1));
+{"fields":["a1","b1","c1"],"rows":[["1","2","1.2"],["2","3","4.5"],["4","1","0.3"]]}
 ```
 
 ## Build
