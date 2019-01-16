@@ -65,10 +65,22 @@ impl SQL {
         Ok(())
     }
 
+    // TODO
+    /// Drop the database
+    pub fn drop_database(&mut self, db_name: &str) -> Result<(), SQLError> {
+        Ok(())
+    }
+
     // TODO: check db delete bit
     /// Load the database and create a new table
     pub fn create_table(&mut self, table: &Table) -> Result<(), SQLError> {
         self.database.insert_new_table(table.clone());
+        Ok(())
+    }
+
+    // TODO
+    /// Drop the table
+    pub fn drop_table(&mut self, table_name: &str) -> Result<(), SQLError> {
         Ok(())
     }
 

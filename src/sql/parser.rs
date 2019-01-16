@@ -92,6 +92,30 @@ impl Parser {
                     sql.select().map_err(|e| ParserError::SQLError(e))?;
                     Ok(())
                 }
+                Token::DropTable => {
+                    debug!("-> drop table");
+                    let _ = iter.next(); // "drop table"
+                    let tb_name_sym = iter
+                        .next()
+                        .ok_or(ParserError::SyntaxError(String::from("no table name")))?;
+                    check_id(tb_name_sym)?;
+
+                    sql.drop_table(&tb_name_sym.name)
+                        .map_err(|e| ParserError::SQLError(e))?;
+                    Ok(())
+                }
+                Token::DropDatabase => {
+                    debug!("-> drop database");
+                    let _ = iter.next(); // "drop database"
+                    let db_name_sym = iter
+                        .next()
+                        .ok_or(ParserError::SyntaxError(String::from("no db name")))?;
+                    check_id(db_name_sym)?;
+
+                    sql.drop_database(&db_name_sym.name)
+                        .map_err(|e| ParserError::SQLError(e))?;
+                    Ok(())
+                }
                 _ => {
                     return Err(ParserError::SyntaxError(String::from("unknown keyword")));
                 }
