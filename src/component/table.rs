@@ -4,6 +4,7 @@ use crate::storage::diskinterface::{DiskError, DiskInterface, TableMeta};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct Table {
@@ -30,6 +31,8 @@ pub struct Table {
 
     /* encryption */
     pub public_key: i32,
+
+    uuid: String,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +40,7 @@ pub struct Row {
     pub data: HashMap<String, String>,
     pub is_dirty: bool,
     pub is_delete: bool,
+    uuid: String,
 }
 
 impl Row {
@@ -45,6 +49,7 @@ impl Row {
             data: HashMap::new(),
             is_dirty: true,
             is_delete: false,
+            uuid: Uuid::new_v4().to_string(),
         }
     }
 }
@@ -115,6 +120,8 @@ impl Table {
             row_set: HashSet::new(),
 
             public_key: 0,
+
+            uuid: Uuid::new_v4().to_string(),
         }
     }
 

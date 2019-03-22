@@ -2,6 +2,7 @@ use crate::component::table::Table;
 use crate::storage::diskinterface::{DiskError, DiskInterface};
 use std::collections::HashMap;
 use std::fmt;
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -11,6 +12,8 @@ pub struct Database {
     /* storage */
     pub is_dirty: bool,
     pub is_delete: bool,
+
+    uuid: String,
 }
 
 #[derive(Debug)]
@@ -33,6 +36,7 @@ impl Database {
             tables: HashMap::new(),
             is_dirty: true,
             is_delete: false,
+            uuid: Uuid::new_v4().to_string(),
         }
     }
 

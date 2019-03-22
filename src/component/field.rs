@@ -1,4 +1,5 @@
 use crate::component::datatype::DataType;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Field {
@@ -8,6 +9,7 @@ pub struct Field {
     pub default: Option<String>,
     pub check: Checker,
     pub encrypt: bool,
+    uuid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +37,7 @@ impl Field {
             default: None,
             check: Checker::None,
             encrypt: false,
+            uuid: Uuid::new_v4().to_string(),
         }
     }
 
@@ -54,6 +57,7 @@ impl Field {
             default,
             check,
             encrypt,
+            uuid: Uuid::new_v4().to_string(),
         }
     }
 }
