@@ -55,7 +55,7 @@ impl Scanner {
                     }
                     if x == quote || is_quoted {
                         self.pos.cursor_r += 1;
-                        if (!is_quoted) {
+                        if !is_quoted {
                             is_quoted = true;
                         } else if x == quote {
                             let word = self.message.get(self.pos.cursor_l + 1..self.pos.cursor_r - 1).unwrap(); // delete quotes
@@ -65,7 +65,7 @@ impl Scanner {
                             self.pos.cursor_l = self.pos.cursor_r;
                             quote = '\0';
                         }
-                    } else if (is_identifier_char(x) || is_operator(x)) {
+                    } else if is_identifier_char(x) || is_operator(x) {
                         self.pos.cursor_r += 1;
                     } else {
                         match x {
