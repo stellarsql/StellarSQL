@@ -1,6 +1,7 @@
 use crate::component::datatype::DataType;
 use crate::component::field::Field;
 use crate::storage::diskinterface::{DiskError, DiskInterface, TableMeta};
+use regex::Regex;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
@@ -74,6 +75,7 @@ pub enum TableError {
     InsertFieldNotExisted(String),
     InsertFieldNotNullMismatched(String),
     InsertFieldDefaultMismatched(String),
+    IllegalValue(String),
     SelectFieldNotExisted(String),
     CausedByFile(DiskError),
     KeyNotExist,
@@ -92,6 +94,11 @@ impl fmt::Display for TableError {
                 f,
                 "Insert Error: {} has no default value. Need to declare the value.",
                 attr_name
+            ),
+            TableError::IllegalValue(ref value) => write!(
+                f,
+                "Insert Error: value {} is illegal. Need to check the content or the datatype:",
+                value
             ),
             TableError::SelectFieldNotExisted(ref name) => write!(f, "Selected field not exists: {}", name),
             TableError::CausedByFile(ref e) => write!(f, "error caused by file: {}", e),
@@ -177,6 +184,9 @@ impl Table {
                 Some(field) => {
                     if field.not_null && value == "null" {
                         return Err(TableError::InsertFieldNotNullMismatched(field.clone().name));
+                    }
+                    if !is_value_valid(value, &field.datatype) {
+                        return Err(TableError::IllegalValue(value.to_string()));
                     }
                     new_row.data.insert(key.to_string(), value.to_string());
                 }
@@ -274,6 +284,10 @@ impl Table {
                     let data = row.data.get(field_name).unwrap().clone();
                     cmp(data, operator, value.to_string())
                 }
+                DataType::Url => {
+                    let data = row.data.get(field_name).unwrap().clone();
+                    cmp(data, operator, value.to_string())
+                }
             } {
                 set.insert(*i);
             }
@@ -332,6 +346,19 @@ fn cmp<T: PartialOrd>(left: T, operator: &str, right: T) -> bool {
         "!=" => left != right,
         "<>" => left != right,
         _ => false, // never happen
+    }
+}
+
+fn is_value_valid(value: &str, datatype: &DataType) -> bool {
+    match datatype {
+        DataType::Url => {
+            let re = Regex::new(r"://[\w\-\.]+(:\d+)?(/[~\w/\.]*)?(\?\S*)?(#\S*)?").unwrap(); // url
+            let re_2 =
+                Regex::new(r"^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$")
+                    .unwrap(); //IPv4
+            re.is_match(value) || re_2.is_match(value)
+        }
+        _ => true, // TODO: check other datatype
     }
 }
 
@@ -434,5 +461,30 @@ mod tests {
         table.set_row_set(set);
         let select_data = table.select(vec!["a1".to_string(), "a2".to_string()]).unwrap();
         assert_eq!(select_data.rows, vec![vec!["4", "bbb"]]);
+    }
+
+    #[test]
+    fn test_url() {
+        let mut table = Table::new("table_1");
+        table.fields.insert(
+            "attr_1".to_string(),
+            Field::new_all("attr_1", DataType::Url, true, None, field::Checker::None, false),
+        );
+        println!("correct data");
+        let data = vec![("attr_1", "https://github.com/stellarsql/stellarsql")];
+        assert!(table.insert_row(data).is_ok());
+        let data = vec![(
+            "attr_1",
+            "https://zh.wikipedia.org/wiki/%E6%AD%A3%E5%88%99%E8%A1%A8%E8%BE%BE%E5%BC%8F",
+        )];
+        assert!(table.insert_row(data).is_ok());
+        let data = vec![("attr_1", "127.0.0.1")];
+        assert!(table.insert_row(data).is_ok());
+        let data = vec![("attr_1", "ftp://abc:1234@192.168.0.1")];
+        assert!(table.insert_row(data).is_ok());
+
+        println!("illegal url");
+        let data = vec![("attr_1", "https:github.comstellarsqlStellarSQL")];
+        assert!(table.insert_row(data).is_err());
     }
 }

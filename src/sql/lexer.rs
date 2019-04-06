@@ -17,12 +17,14 @@ struct Pos {
 #[derive(Debug)]
 pub enum LexerError {
     NotAllowedChar,
+    QuoteError,
 }
 
 impl fmt::Display for LexerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             LexerError::NotAllowedChar => write!(f, "please use ascii character."),
+            LexerError::QuoteError => write!(f, "please check the quotes"),
         }
     }
 }
@@ -41,11 +43,29 @@ impl Scanner {
     pub fn scan_tokens(&mut self) -> Result<Vec<symbol::Symbol>, LexerError> {
         debug!("Starting scanning message:\n`{}`", self.message);
         let mut chars = self.message.chars();
+        let mut is_quoted = false;
+        let mut quote = '\0';
 
         loop {
             match chars.next() {
                 Some(x) => {
-                    if is_identifier_char(x) || is_operator(x) {
+                    // first meet " or '
+                    if !is_quoted && (x == '"' || x == '\'') {
+                        quote = x.clone();
+                    }
+                    if x == quote || is_quoted {
+                        self.pos.cursor_r += 1;
+                        if (!is_quoted) {
+                            is_quoted = true;
+                        } else if x == quote {
+                            let word = self.message.get(self.pos.cursor_l + 1..self.pos.cursor_r - 1).unwrap(); // delete quotes
+                            self.tokens
+                                .push(symbol::sym(word, symbol::Token::Identifier, symbol::Group::Identifier));
+                            is_quoted = false;
+                            self.pos.cursor_l = self.pos.cursor_r;
+                            quote = '\0';
+                        }
+                    } else if (is_identifier_char(x) || is_operator(x)) {
                         self.pos.cursor_r += 1;
                     } else {
                         match x {
@@ -189,7 +209,13 @@ impl Scanner {
                     }
                 }
                 // iter to the end
-                None => break,
+                None => {
+                    if is_quoted {
+                        // if find no second quote
+                        return Err(LexerError::QuoteError);
+                    }
+                    break;
+                }
             };
         }
         Ok(self.tokens.clone())
@@ -212,6 +238,38 @@ fn is_delimiter(ch: char) -> bool {
 mod tests {
     use super::*;
     use env_logger;
+
+    #[test]
+    pub fn test_quote() {
+        let message = "'123://'";
+        let mut s = Scanner::new(message);
+        let tokens = s.scan_tokens().unwrap();
+        let mut iter = (&tokens).iter();
+        let x = iter.next().unwrap();
+        println!("test{:?}", x.name);
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"123://\", Identifier, Identifier"
+        );
+
+        let message = "'qqq\"' ,123";
+        let mut s = Scanner::new(message);
+        let tokens = s.scan_tokens().unwrap();
+        let mut iter = (&tokens).iter();
+        let x = iter.next().unwrap();
+        println!("test{:?}", x.name);
+        assert_eq!(
+            format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
+            "\"qqq\\\"\", Identifier, Identifier"
+        );
+
+        let message = "\"qqq\', 123 ";
+        let mut s = Scanner::new(message);
+        match s.scan_tokens() {
+            Ok(_) => {}
+            Err(e) => assert_eq!(format!("{}", e), "please check the quotes"),
+        }
+    }
 
     #[test]
     pub fn test_scan_tokens() {
@@ -364,7 +422,7 @@ mod tests {
         let x = iter.next().unwrap();
         assert_eq!(
             format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-            "\"\\\'cardinal\\\'\", Identifier, Identifier"
+            "\"cardinal\", Identifier, Identifier"
         );
         let x = iter.next().unwrap();
         assert_eq!(
@@ -374,7 +432,7 @@ mod tests {
         let x = iter.next().unwrap();
         assert_eq!(
             format!("{:?}, {:?}, {:?}", x.name, x.token, x.group),
-            "\"\\\'norway\\\'\", Identifier, Identifier"
+            "\"norway\", Identifier, Identifier"
         );
         let x = iter.next().unwrap();
         assert_eq!(

@@ -20,6 +20,7 @@ pub enum BytesCoderError {
     ParseFloat,
     StringLength,
     StringDecode,
+    UrlLength,
     AttrNotExists,
 }
 
@@ -84,6 +85,7 @@ impl fmt::Display for BytesCoderError {
             }
             BytesCoderError::StringLength => write!(f, "The string attempt to store exceed the size of field."),
             BytesCoderError::StringDecode => write!(f, "Error occurred during decoding utf8 String from bytes."),
+            BytesCoderError::UrlLength => write!(f, "The url attempt to store exceed the size of field."),
             BytesCoderError::AttrNotExists => write!(f, "The row does not contain specified attribute."),
         }
     }
@@ -110,6 +112,13 @@ impl BytesCoder {
                 bs.extend_from_slice(str_val.as_bytes());
                 bs.extend_from_slice(&vec![0; *length as usize - str_val.len()])
             }
+            DataType::Url => {
+                if str_val.len() > 256 as usize {
+                    return Err(BytesCoderError::UrlLength);
+                }
+                bs.extend_from_slice(str_val.as_bytes());
+                bs.extend_from_slice(&vec![0; 256 as usize - str_val.len()])
+            }
         }
 
         Ok(bs)
@@ -123,6 +132,7 @@ impl BytesCoder {
             DataType::Float => s = (&(*bytes)[..]).read_f32::<BigEndian>()?.to_string(),
             DataType::Int => s = (&(*bytes)[..]).read_i32::<BigEndian>()?.to_string(),
             DataType::Varchar(_length) => s = String::from_utf8(bytes.trim().to_vec())?,
+            DataType::Url => s = String::from_utf8(bytes.trim().to_vec())?,
         }
 
         Ok(s)
@@ -210,6 +220,13 @@ mod tests {
         assert_eq!(
             BytesCoder::attr_to_bytes(&datatype, &data).unwrap_err(),
             BytesCoderError::StringLength
+        );
+
+        let datatype = DataType::Url;
+        let data = "https://developer.mozilla.org/zh-TW/docs/Web/JavaScript/Guide/Regular_Expressions".to_string();
+        assert_eq!(
+            BytesCoder::bytes_to_attr(&datatype, &BytesCoder::attr_to_bytes(&datatype, &data).unwrap()).unwrap(),
+            data
         );
     }
 

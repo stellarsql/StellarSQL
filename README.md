@@ -55,7 +55,7 @@ SQL query are not implement very well. A few simple command support for now:
 
 - create database
 - create table
-  - type: int, float, double, varchar, char
+  - type: int, float, double, varchar, char, url
 - insert into
 - select {fields} from {table} where {predicate}
   - not yet support join, only a table

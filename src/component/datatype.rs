@@ -5,6 +5,7 @@ pub enum DataType {
     Float,
     Int,
     Varchar(u8),
+    Url,
 }
 
 impl DataType {
@@ -16,6 +17,7 @@ impl DataType {
             "float" => DataType::Float,
             "int" => DataType::Int,
             "varchar" => DataType::Varchar(length),
+            "url" => DataType::Url,
             _ => return None,
         };
         Some(d)
@@ -30,6 +32,7 @@ mod tests {
     fn test_datatype() {
         assert_eq!(DataType::Double, DataType::get("double", None).unwrap());
         assert_eq!(DataType::Char(8), DataType::get("char", Some(8)).unwrap());
+        assert_eq!(DataType::Url, DataType::get("url", None).unwrap());
         assert!(DataType::get("date", None).is_none());
     }
 }

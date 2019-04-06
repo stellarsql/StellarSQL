@@ -105,6 +105,7 @@ pub enum Token {
     Float,
     Int,
     Varchar,
+    Url,
 
     /* Operator */
     LT, // <
@@ -230,6 +231,7 @@ lazy_static! {
         m.insert("float", sym("float", Token::Float, Group::DataType));
         m.insert("int", sym("int", Token::Int, Group::DataType));
         m.insert("varchar", sym("varchar", Token::Varchar, Group::DataType));
+        m.insert("url", sym("url", Token::Url, Group::DataType));
 
         /* Operator */
         m.insert(">", sym(">", Token::GT, Group::Operator));
@@ -308,6 +310,11 @@ mod tests {
         assert_eq!(s.len, 1);
         assert_eq!(s.token, Token::GT);
         assert_eq!(s.group, Group::Operator);
+        let s = SYMBOLS.get("url").unwrap();
+        assert_eq!(s.name, "url");
+        assert_eq!(s.len, 3);
+        assert_eq!(s.token, Token::Url);
+        assert_eq!(s.group, Group::DataType);
     }
 
     #[test]

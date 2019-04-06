@@ -414,6 +414,7 @@ impl DiskInterface {
             DataType::Float => 4,
             DataType::Int => 4,
             DataType::Varchar(length) => length.clone() as u32,
+            DataType::Url => 256,
         }
     }
 
