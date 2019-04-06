@@ -1,14 +1,14 @@
 # StellarSQL
 
-[![Build Status](https://travis-ci.org/tigercosmos/StellarSQL.svg?branch=master)](https://travis-ci.org/tigercosmos/StellarSQL)
+[![Build Status](https://travis-ci.org/stellarsql/StellarSQL.svg?branch=master)](https://travis-ci.org/stellarsql/StellarSQL)
 
 (WIP) A minimal SQL DBMS written in Rust
 
-- The document is [here](https://tigercosmos.xyz/StellarSQL/stellar_sql/).
+- The document is [here](https://stellarsql.github.io/StellarSQL/stellar_sql/).
 - There is a [slide](https://docs.google.com/presentation/d/1rSxFNpN5uzP1cF1olKTnyXgPdj_bcbLvSJhN5T5xn-U/edit?usp=sharing) introduce this project.
 - There is a series of articles introducing about this project: [Let's build a DBMS](https://tigercosmos.xyz/lets-build-dbms/)
 
-![logo](https://raw.githubusercontent.com/tigercosmos/StellarSQL/master/logo/logo.png)
+![logo](https://raw.githubusercontent.com/stellarsql/StellarSQL/master/logo/logo.png)
 
 ## Setup
 
