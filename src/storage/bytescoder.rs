@@ -124,13 +124,13 @@ impl BytesCoder {
         Ok(bs)
     }
 
-    pub fn bytes_to_attr(datatype: &DataType, bytes: &Vec<u8>) -> Result<String, BytesCoderError> {
+    pub fn bytes_to_attr(datatype: &DataType, bytes: &[u8]) -> Result<String, BytesCoderError> {
         let s: String;
         match datatype {
             DataType::Char(_length) => s = String::from_utf8(bytes.trim().to_vec())?,
-            DataType::Double => s = (&(*bytes)[..]).read_f64::<BigEndian>()?.to_string(),
-            DataType::Float => s = (&(*bytes)[..]).read_f32::<BigEndian>()?.to_string(),
-            DataType::Int => s = (&(*bytes)[..]).read_i32::<BigEndian>()?.to_string(),
+            DataType::Double => s = (&(*bytes)).read_f64::<BigEndian>()?.to_string(),
+            DataType::Float => s = (&(*bytes)).read_f32::<BigEndian>()?.to_string(),
+            DataType::Int => s = (&(*bytes)).read_i32::<BigEndian>()?.to_string(),
             DataType::Varchar(_length) => s = String::from_utf8(bytes.trim().to_vec())?,
             DataType::Url => s = String::from_utf8(bytes.trim().to_vec())?,
         }
