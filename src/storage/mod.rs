@@ -3,3 +3,4 @@ pub mod diskinterface;
 pub mod file;
 pub mod index;
 pub mod io;
+pub mod page;
