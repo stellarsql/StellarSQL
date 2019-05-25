@@ -204,7 +204,7 @@ impl SQL {
             (true, true) => {
                 return Err(SQLError::SemanticError(String::from(
                     "where and join on clause cannot be together",
-                )))
+                )));
             }
             (false, false) => {
                 // No join. The virtual table is the table.
