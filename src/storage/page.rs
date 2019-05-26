@@ -1,31 +1,138 @@
 use crate::component::datatype::DataType;
+use crate::index::tree::NodeType;
 use crate::storage::bytescoder::BytesCoder;
 
-trait Page {
+trait IndexPage {
+    fn new(
+        pid: u32,
+        capacity: usize,
+        node_type: NodeType,
+        key_type: DataType,
+        ptr_size: usize,
+        key_size: usize,
+        row_ptr_size: Option<usize>,
+    ) -> Self;
+}
+
+trait FilePage {
     fn new(pid: u32, block_length: usize) -> Self;
 }
 
-struct IndexPage {
+struct IndexInternalPage {
     header: HeaderBytes,
     content: ContentBytes,
 }
 
-pub const HEADER_SIZE: usize = 20;
-struct Header {
+struct IndexLeafPage {
+    header: HeaderBytes,
+    content: ContentBytes,
+}
+
+struct DataFilePage {
+    header: HeaderBytes,
+    content: ContentBytes,
+}
+
+trait Header {
+    fn to_bytes(&self) -> HeaderBytes;
+    fn from_bytes(header_bytes: &HeaderBytes) -> Self;
+}
+
+pub const FILE_HEADER_SIZE: usize = 20;
+struct FileHeader {
     pid: u32,
     capacity: usize,
     block_length: usize,
+}
+
+pub const INDEX_INTERNAL_HEADER_SIZE: usize = 20;
+struct IndexInternalHeader {
+    pid: u32,
+    capacity: usize,
+    node_type: NodeType,
+    key_type: DataType,
+    ptr_size: usize,
+    key_size: usize,
+}
+
+pub const INDEX_LEAF_HEADER_SIZE: usize = 20;
+struct IndexLeafHeader {
+    pid: u32,
+    capacity: usize,
+    node_type: NodeType,
+    key_type: DataType,
+    ptr_size: usize,
+    key_size: usize,
+    row_ptr_size: usize,
 }
 
 type Bytes = Vec<u8>;
 struct HeaderBytes(Bytes);
 struct ContentBytes(Bytes);
 
-impl Page for IndexPage {
-    fn new(pid: u32, block_length: usize) -> Self {
-        let capacity = get_capacity(&block_length);
+impl IndexPage for IndexInternalPage {
+    fn new(
+        pid: u32,
+        capacity: usize,
+        node_type: NodeType,
+        key_type: DataType,
+        ptr_size: usize,
+        key_size: usize,
+        row_ptr_size: Option<usize>,
+    ) -> Self {
+        let header = IndexInternalHeader {
+            pid,
+            capacity,
+            node_type,
+            key_type,
+            ptr_size,
+            key_size,
+        };
 
-        let header = Header {
+        let content = Vec::with_capacity(key_size * capacity + ptr_size * (capacity + 1));
+
+        Self {
+            header: header.to_bytes(),
+            content: ContentBytes(content),
+        }
+    }
+}
+
+impl IndexPage for IndexLeafPage {
+    fn new(
+        pid: u32,
+        capacity: usize,
+        node_type: NodeType,
+        key_type: DataType,
+        ptr_size: usize,
+        key_size: usize,
+        row_ptr_size: Option<usize>,
+    ) -> Self {
+        let row_ptr_size = row_ptr_size.unwrap();
+        let header = IndexLeafHeader {
+            pid,
+            capacity,
+            node_type,
+            key_type,
+            ptr_size,
+            key_size,
+            row_ptr_size,
+        };
+
+        let content = Vec::with_capacity((key_size + row_ptr_size) * capacity + ptr_size * 2);
+
+        Self {
+            header: header.to_bytes(),
+            content: ContentBytes(content),
+        }
+    }
+}
+
+impl FilePage for DataFilePage {
+    fn new(pid: u32, block_length: usize) -> Self {
+        let capacity = get_file_capacity(&block_length);
+
+        let header = FileHeader {
             pid,
             capacity: capacity.clone(),
             block_length: block_length.clone(),
@@ -40,16 +147,16 @@ impl Page for IndexPage {
     }
 }
 
-fn get_capacity(block_length: &usize) -> usize {
+fn get_file_capacity(block_length: &usize) -> usize {
     let page_size = match dotenv!("PAGE_SIZE").parse::<usize>() {
         Ok(s) => s,
         Err(_) => 4096,
     };
 
-    (page_size - HEADER_SIZE) / block_length
+    (page_size - FILE_HEADER_SIZE) / block_length
 }
 
-impl Header {
+impl Header for FileHeader {
     fn to_bytes(&self) -> HeaderBytes {
         let mut bytes: Bytes = vec![];
         bytes.extend_from_slice(&BytesCoder::attr_to_bytes(&DataType::Int, &self.pid.to_string()).unwrap());
@@ -59,7 +166,7 @@ impl Header {
         HeaderBytes(bytes)
     }
 
-    fn from_bytes(header_bytes: &HeaderBytes) -> Header {
+    fn from_bytes(header_bytes: &HeaderBytes) -> Self {
         let bytes = &header_bytes.0;
         let pid = BytesCoder::bytes_to_attr(&DataType::Int, &bytes[0..4])
             .unwrap()
@@ -73,10 +180,66 @@ impl Header {
             .unwrap()
             .parse::<usize>()
             .unwrap();
-        Header {
+        Self {
             pid,
             capacity,
             block_length,
+        }
+    }
+}
+
+impl Header for IndexInternalHeader {
+    fn to_bytes(&self) -> HeaderBytes {
+        let mut bytes: Bytes = vec![];
+        // TODO
+        HeaderBytes(bytes)
+    }
+
+    fn from_bytes(header_bytes: &HeaderBytes) -> Self {
+        // TODO
+        let bytes = &header_bytes.0;
+        let pid = 0;
+        let capacity = 0;
+        let node_type = NodeType::Internal;
+        let key_type = DataType::Int;
+        let ptr_size = 0;
+        let key_size = 0;
+        Self {
+            pid,
+            capacity,
+            node_type,
+            key_type,
+            ptr_size,
+            key_size,
+        }
+    }
+}
+
+impl Header for IndexLeafHeader {
+    fn to_bytes(&self) -> HeaderBytes {
+        let mut bytes: Bytes = vec![];
+        // TODO
+        HeaderBytes(bytes)
+    }
+
+    fn from_bytes(header_bytes: &HeaderBytes) -> Self {
+        // TODO
+        let bytes = &header_bytes.0;
+        let pid = 0;
+        let capacity = 0;
+        let node_type = NodeType::Leaf;
+        let key_type = DataType::Int;
+        let ptr_size = 0;
+        let key_size = 0;
+        let row_ptr_size = 0;
+        Self {
+            pid,
+            capacity,
+            node_type,
+            key_type,
+            ptr_size,
+            key_size,
+            row_ptr_size,
         }
     }
 }
@@ -86,15 +249,15 @@ mod tests {
     use super::*;
 
     #[test]
-    pub fn test_header() {
-        let header = Header {
+    pub fn test_file_header() {
+        let header = FileHeader {
             pid: 1,
             capacity: 101,
             block_length: 128,
         };
 
         let header_bytes = header.to_bytes();
-        let header = Header::from_bytes(&header_bytes);
+        let header = FileHeader::from_bytes(&header_bytes);
 
         assert_eq!(header.pid, 1);
         assert_eq!(header.capacity, 101);
@@ -102,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    pub fn test_create_index_page() {
-        let _index_page = IndexPage::new(0, 128);
+    pub fn test_create_file_page() {
+        let _file_page = DataFilePage::new(0, 128);
     }
 }
