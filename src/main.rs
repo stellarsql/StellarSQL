@@ -14,6 +14,7 @@ extern crate log;
 
 mod component;
 mod connection;
+mod index;
 mod manager;
 mod sql;
 mod storage;

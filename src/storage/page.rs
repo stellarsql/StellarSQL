@@ -10,7 +10,7 @@ struct IndexPage {
     content: ContentBytes,
 }
 
-const HEADER_SIZE: usize = 20;
+pub const HEADER_SIZE: usize = 20;
 struct Header {
     pid: u32,
     capacity: usize,
