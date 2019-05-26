@@ -1,5 +1,6 @@
+use crate::component::datatype::DataType;
 use crate::index::tree::{NodeType, PagePtr, RowPtr, Tree};
-use crate::storage::page::HEADER_SIZE;
+use crate::storage::page::{INDEX_INTERNAL_HEADER_SIZE, INDEX_LEAF_HEADER_SIZE};
 
 /// B+ Tree
 ///
@@ -24,8 +25,12 @@ use crate::storage::page::HEADER_SIZE;
 /// ```
 pub struct BPlusTree<T> {
     pid: u32,
-    capacity: usize,
     node_type: NodeType,
+    key_type: DataType,
+    capacity: usize,
+    ptr_size: usize,
+    key_size: usize,
+    row_ptr_size: Option<usize>,
     ptrs: Vec<PagePtr>,
     keys: Vec<T>,
     rows: Option<Vec<RowPtr>>,
@@ -33,7 +38,14 @@ pub struct BPlusTree<T> {
 }
 
 impl<T> Tree<T> for BPlusTree<T> {
-    fn new(pid: u32, node_type: NodeType, ptr_size: usize, key_size: usize, row_ptr_size: Option<usize>) -> Self {
+    fn new(
+        pid: u32,
+        node_type: NodeType,
+        key_type: DataType,
+        ptr_size: usize,
+        key_size: usize,
+        row_ptr_size: Option<usize>,
+    ) -> Self {
         match node_type {
             NodeType::Internal => {
                 let capacity = get_internal_capacity(ptr_size, key_size);
@@ -43,8 +55,12 @@ impl<T> Tree<T> for BPlusTree<T> {
                 let nodes: Vec<Box<Self>> = Vec::with_capacity(capacity);
                 Self {
                     pid,
-                    capacity,
                     node_type,
+                    key_type,
+                    capacity,
+                    ptr_size,
+                    key_size,
+                    row_ptr_size,
                     ptrs,
                     keys,
                     rows,
@@ -59,8 +75,12 @@ impl<T> Tree<T> for BPlusTree<T> {
                 let nodes: Vec<Box<Self>> = Vec::with_capacity(2);
                 Self {
                     pid,
-                    capacity,
                     node_type,
+                    key_type,
+                    capacity,
+                    ptr_size,
+                    key_size,
+                    row_ptr_size,
                     ptrs,
                     keys,
                     rows,
@@ -85,7 +105,7 @@ fn get_internal_capacity(ptr_size: usize, key_size: usize) -> usize {
         Err(_) => 4096,
     };
     // page_size - header_size > n(key_size) + (n+1)(ptr_size)
-    (page_size - HEADER_SIZE - ptr_size) / (ptr_size + key_size)
+    (page_size - INDEX_INTERNAL_HEADER_SIZE - ptr_size) / (ptr_size + key_size)
 }
 
 fn get_leaf_capacity(ptr_size: usize, key_size: usize, row_ptr_size: usize) -> usize {
@@ -94,7 +114,7 @@ fn get_leaf_capacity(ptr_size: usize, key_size: usize, row_ptr_size: usize) -> u
         Err(_) => 4096,
     };
     // page_size - header_size > n(key_size + row_ptr_size) + 2(ptr_size)
-    (page_size - HEADER_SIZE - 2 * ptr_size) / (row_ptr_size + key_size)
+    (page_size - INDEX_LEAF_HEADER_SIZE - 2 * ptr_size) / (row_ptr_size + key_size)
 }
 
 #[cfg(test)]
@@ -103,7 +123,7 @@ mod tests {
 
     #[test]
     pub fn test_new_b_plus_tree() {
-        let _internal_tree: BPlusTree<u32> = BPlusTree::new(0, NodeType::Internal, 4, 8, None);
-        let _leaf_tree: BPlusTree<String> = BPlusTree::new(0, NodeType::Leaf, 4, 128, Some(8));
+        let _internal_tree: BPlusTree<u32> = BPlusTree::new(0, NodeType::Internal, DataType::Int, 4, 8, None);
+        let _leaf_tree: BPlusTree<String> = BPlusTree::new(0, NodeType::Leaf, DataType::Char(10), 4, 128, Some(8));
     }
 }
