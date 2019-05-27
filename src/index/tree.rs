@@ -12,13 +12,14 @@ pub trait Tree<T> {
         ptr_size: usize,
         key_size: usize,
         row_ptr_size: Option<usize>,
-    ) -> Self;
+    ) -> Box<Self>;
     fn height(&self) -> u32;
     fn insert(&mut self, val: T);
     fn delete(&mut self, val: T);
     fn search(&self, val: T) -> RowPtr;
 }
 
+#[derive(PartialEq)]
 pub enum NodeType {
     Internal,
     Leaf,
