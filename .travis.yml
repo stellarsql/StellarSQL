@@ -1,6 +1,16 @@
+sudo: required
+dist: trusty
+addons:
+    apt:
+        packages:
+            - libssl-dev
 language: rust
 rust:
   - 1.35.0
+  - nightly
+matrix:
+  allow_failures:
+    - rust: nightly
 
 before_script:
   - rustup component add rustfmt-preview
@@ -10,11 +20,24 @@ cache:
     - ./target
     - $HOME/.cargo/bin
 
+before_cache: |
+  if [[ "$TRAVIS_RUST_VERSION" == stable ]]; then
+    cargo install cargo-tarpaulin -f
+  fi
+
 script:
   - cargo fmt --all -- --check
   - cargo build
   - cargo test
   - cargo rustdoc -- --document-private-items 
+
+after_success: |
+  if [[ "$TRAVIS_RUST_VERSION" == stable ]]; then
+    cargo tarpaulin --ciserver travis-ci --coveralls $TRAVIS_JOB_ID
+
+    cargo tarpaulin --out Xml
+    bash <(curl -s https://codecov.io/bash)
+  fi
 
 deploy:
   provider: pages

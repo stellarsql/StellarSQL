@@ -1,6 +1,7 @@
 # StellarSQL
 
 [![Build Status](https://travis-ci.org/stellarsql/StellarSQL.svg?branch=master)](https://travis-ci.org/stellarsql/StellarSQL)
+[![codecov](https://codecov.io/gh/stellarsql/StellarSQL/branch/master/graph/badge.svg)](https://codecov.io/gh/stellarsql/StellarSQL)
 
 (WIP) A minimal SQL DBMS written in Rust
 
