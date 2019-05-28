@@ -1,0 +1,3 @@
+var N = null;var sourcesIndex = {};
+sourcesIndex["stellar_sql"] = {"name":"","dirs":[{"name":"component","dirs":[],"files":["database.rs","datatype.rs","field.rs","mod.rs","table.rs"]},{"name":"connection","dirs":[],"files":["message.rs","mod.rs","request.rs","response.rs"]},{"name":"index","dirs":[],"files":["btree.rs","mod.rs","tree.rs"]},{"name":"manager","dirs":[],"files":["mod.rs","pool.rs"]},{"name":"sql","dirs":[],"files":["lexer.rs","mod.rs","parser.rs","query.rs","symbol.rs","worker.rs"]},{"name":"storage","dirs":[],"files":["bytescoder.rs","diskinterface.rs","file.rs","index.rs","io.rs","mod.rs","page.rs"]}],"files":["main.rs"]};
+createSourceSidebar();

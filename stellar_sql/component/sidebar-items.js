@@ -1,0 +1,1 @@
+initSidebarItems({"mod":[["database",""],["datatype",""],["field",""],["table",""]]});

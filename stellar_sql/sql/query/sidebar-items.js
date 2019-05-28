@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["JoinType",""],["SortDirection",""],["TopType",""]],"struct":[["Join",""],["Node",""],["QueryData","Data for `select`"]],"type":[["NodePtr",""]]});
