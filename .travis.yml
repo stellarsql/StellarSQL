@@ -6,7 +6,7 @@ addons:
             - libssl-dev
 language: rust
 rust:
-  - 1.35.0
+  - stable
   - nightly
 matrix:
   allow_failures:
